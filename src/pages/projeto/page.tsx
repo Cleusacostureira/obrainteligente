@@ -47,6 +47,22 @@ export default function ProjetoDetalhes() {
     load();
   }, [id, navigate]);
 
+  const handleEditCusto = (custoId: string) => {
+    navigate(`/projeto/${id}/novo-custo?custoId=${custoId}`);
+  };
+
+  const handleDeleteCusto = async (custoId: string) => {
+    const ok = confirm('Deseja realmente excluir este lançamento?');
+    if (!ok) return;
+    const { error } = await supabase.from('custos').delete().eq('id', custoId);
+    if (error) {
+      console.error(error);
+      alert('Erro ao excluir lançamento');
+      return;
+    }
+    setCustos(prev => prev.filter(c => c.id !== custoId));
+  };
+
   if (!projeto) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-teal-50 to-orange-50 flex items-center justify-center">
@@ -66,12 +82,45 @@ export default function ProjetoDetalhes() {
 
   // Correção do reduce: adiciona o objeto inicial `{}` antes do cast
   const custosPorCategoria = custos.reduce((acc, custo) => {
-    acc[custo.categoria] = (acc[custo.categoria] || 0) + custo.valorTotal;
+    const val = Number(custo.valorTotal ?? 0);
+    acc[custo.categoria] = (acc[custo.categoria] || 0) + val;
     return acc;
   }, {} as Record<string, number>);
 
-  const progresso = (projeto.gastoTotal / projeto.orcamento) * 100;
-  const saldo = projeto.orcamento - projeto.gastoTotal;
+  // Valores seguros para evitar crashes quando campos forem undefined
+  const orcamento = Number(projeto.orcamento ?? 0);
+  const gastoTotal = Number(projeto.gastoTotal ?? 0);
+  const area = Number(projeto.area ?? 0) || 0;
+  const valorCompra = Number(projeto.valor_compra ?? projeto.valorCompra ?? 0);
+
+  const progresso = orcamento === 0 ? 0 : (gastoTotal / orcamento) * 100;
+  const saldo = orcamento - gastoTotal;
+
+  // Cronograma: datas e previsão linear de gastos
+  const startDate = projeto.dataInicio ? new Date(projeto.dataInicio) : null;
+  const endDate = projeto.dataTermino ? new Date(projeto.dataTermino) : null;
+  const today = new Date();
+  const msPerDay = 1000 * 60 * 60 * 24;
+
+  let totalDays: number | null = null;
+  let elapsedDays = 0;
+  let timelinePercent = 0;
+
+  if (startDate && endDate) {
+    totalDays = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / msPerDay));
+    elapsedDays = Math.max(0, Math.min(totalDays, Math.floor((today.getTime() - startDate.getTime()) / msPerDay)));
+    timelinePercent = totalDays > 0 ? (elapsedDays / totalDays) * 100 : 0;
+  } else if (startDate) {
+    elapsedDays = Math.max(0, Math.floor((today.getTime() - startDate.getTime()) / msPerDay));
+    timelinePercent = 0;
+  }
+
+  // Projeção linear de gastos: ritmo atual extrapolado para todo o cronograma
+  let projectedTotal = gastoTotal;
+  if (elapsedDays > 0 && totalDays && elapsedDays > 0) {
+    projectedTotal = Math.round((gastoTotal / elapsedDays) * totalDays);
+  }
+  const projectedDiff = orcamento - projectedTotal;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-50 to-orange-50">
@@ -93,7 +142,7 @@ export default function ProjetoDetalhes() {
             <div className="flex-1">
               <h1 className="text-xl font-bold text-gray-800">{projeto.nome}</h1>
               <p className="text-sm text-gray-600 capitalize">
-                {projeto.tipo.replace('-', ' ')} • {projeto.padrao}
+                {projeto.tipo ? projeto.tipo.replace('-', ' ') : ''} • {projeto.padrao ?? ''}
               </p>
             </div>
             <div
@@ -155,9 +204,9 @@ export default function ProjetoDetalhes() {
                   </div>
                 </div>
                 <h3 className="text-sm font-medium text-gray-600 mb-1">Orçamento Total</h3>
-                <p className="text-2xl font-bold text-gray-800">
-                  R$ {projeto.orcamento.toLocaleString('pt-BR')}
-                </p>
+                  <p className="text-2xl font-bold text-gray-800">
+                    R$ {orcamento.toLocaleString('pt-BR')}
+                  </p>
               </div>
 
               <div className="bg-white rounded-2xl shadow-lg p-6">
@@ -168,7 +217,7 @@ export default function ProjetoDetalhes() {
                 </div>
                 <h3 className="text-sm font-medium text-gray-600 mb-1">Total Gasto</h3>
                 <p className="text-2xl font-bold text-gray-800">
-                  R$ {projeto.gastoTotal.toLocaleString('pt-BR')}
+                  R$ {gastoTotal.toLocaleString('pt-BR')}
                 </p>
               </div>
 
@@ -240,8 +289,8 @@ export default function ProjetoDetalhes() {
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">
-                  R$ {projeto.gastoTotal.toLocaleString('pt-BR')} de R${' '}
-                  {projeto.orcamento.toLocaleString('pt-BR')}
+                  R$ {gastoTotal.toLocaleString('pt-BR')} de R${' '}
+                  {orcamento.toLocaleString('pt-BR')}
                 </span>
                 {progresso > 100 && (
                   <span className="text-red-600 font-semibold">
@@ -256,7 +305,7 @@ export default function ProjetoDetalhes() {
               <h3 className="text-lg font-bold text-gray-800 mb-6">Gastos por Categoria</h3>
               <div className="space-y-4">
                 {Object.entries(custosPorCategoria).map(([categoria, valor]) => {
-                  const percentual = (valor / projeto.gastoTotal) * 100;
+                  const percentual = gastoTotal === 0 ? 0 : (valor / gastoTotal) * 100;
                   return (
                     <div key={categoria}>
                       <div className="flex items-center justify-between mb-2">
@@ -265,7 +314,7 @@ export default function ProjetoDetalhes() {
                         </span>
                         <div className="text-right">
                           <span className="text-sm font-bold text-gray-800">
-                            R$ {valor.toLocaleString('pt-BR')}
+                            R$ {Number(valor ?? 0).toLocaleString('pt-BR')}
                           </span>
                           <span className="text-xs text-gray-500 ml-2">
                             ({percentual.toFixed(1)}%)
@@ -291,8 +340,14 @@ export default function ProjetoDetalhes() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between py-2 border-b">
                     <span className="text-sm text-gray-600">Área Total</span>
-                    <span className="text-sm font-semibold text-gray-800">{projeto.area} m²</span>
+                    <span className="text-sm font-semibold text-gray-800">{area} m²</span>
                   </div>
+                  {valorCompra > 0 && (
+                    <div className="flex items-center justify-between py-2 border-b">
+                      <span className="text-sm text-gray-600">Valor do Imóvel</span>
+                      <span className="text-sm font-semibold text-gray-800">R$ {valorCompra.toLocaleString('pt-BR')}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between py-2 border-b">
                     <span className="text-sm text-gray-600">Custo por m²</span>
                     <span className="text-sm font-semibold text-gray-800">
@@ -322,17 +377,57 @@ export default function ProjetoDetalhes() {
                   <div className="flex items-center justify-between py-2 border-b">
                     <span className="text-sm text-gray-600">Data de Início</span>
                     <span className="text-sm font-semibold text-gray-800">
-                      {new Date(projeto.dataInicio).toLocaleDateString('pt-BR')}
+                      {startDate ? startDate.toLocaleDateString('pt-BR') : '—'}
                     </span>
                   </div>
-                  {projeto.dataTermino && (
-                    <div className="flex items-center justify-between py-2 border-b">
-                      <span className="text-sm text-gray-600">Previsão de Término</span>
-                      <span className="text-sm font-semibold text-gray-800">
-                        {new Date(projeto.dataTermino).toLocaleDateString('pt-BR')}
-                      </span>
+
+                  <div className="flex items-center justify-between py-2 border-b">
+                    <span className="text-sm text-gray-600">Previsão de Término</span>
+                    <span className="text-sm font-semibold text-gray-800">
+                      {endDate ? endDate.toLocaleDateString('pt-BR') : '—'}
+                    </span>
+                  </div>
+
+                  <div className="pt-3">
+                    <div className="text-sm text-gray-600 mb-2">Progresso do Cronograma</div>
+                    <div className="w-full bg-gray-200 rounded-full h-4 mb-2">
+                      <div
+                        className={`h-4 rounded-full transition-all ${timelinePercent > 100 ? 'bg-red-500' : 'bg-teal-500'}`}
+                        style={{ width: `${Math.min(100, timelinePercent)}%` }}
+                      />
                     </div>
-                  )}
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <span>{startDate ? startDate.toLocaleDateString('pt-BR') : '—'}</span>
+                      <span>
+                        {totalDays ? `${elapsedDays} / ${totalDays} dias` : `${elapsedDays} dias decorridos`}
+                      </span>
+                      <span>{endDate ? endDate.toLocaleDateString('pt-BR') : '—'}</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t">
+                    <div className="text-sm text-gray-600 mb-2">Previsão de Gastos (projeção linear)</div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="text-sm text-gray-600">Gasto Atual</div>
+                        <div className="text-lg font-bold">R$ {gastoTotal.toLocaleString('pt-BR')}</div>
+                      </div>
+                      <div>
+                        <div className="text-sm text-gray-600">Previsão Total</div>
+                        <div className={`text-lg font-bold ${projectedDiff < 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                          R$ {Number(projectedTotal ?? 0).toLocaleString('pt-BR')}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-gray-600">Saldo projetado</div>
+                        <div className={`text-lg font-bold ${projectedDiff < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          R$ {Math.abs(projectedDiff).toLocaleString('pt-BR')}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500">Projeção linear baseada no ritmo atual de gastos.</div>
+                  </div>
+
                   {projeto.observacoes && (
                     <div className="pt-2">
                       <span className="text-sm text-gray-600 block mb-1">Observações</span>
@@ -401,17 +496,17 @@ export default function ProjetoDetalhes() {
                         <td className="px-6 py-4 text-sm text-gray-800">{custo.descricao}</td>
                         <td className="px-6 py-4 text-sm text-gray-800 text-right">{custo.quantidade}</td>
                         <td className="px-6 py-4 text-sm text-gray-800 text-right">
-                          R$ {custo.valorUnitario.toLocaleString('pt-BR')}
+                          R$ {Number(custo.valorUnitario ?? 0).toLocaleString('pt-BR')}
                         </td>
-                        <td className="px-6 py-4 text-sm font-semibold text-gray-800 text-right">
-                          R$ {custo.valorTotal.toLocaleString('pt-BR')}
+                        <td className="px-6 py-4 text-sm font-semibold text-green-600 text-right">
+                          R$ {Number(custo.valorTotal ?? custo.valor_total ?? 0).toLocaleString('pt-BR')}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
-                            <button className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-teal-600 transition-colors cursor-pointer">
+                            <button onClick={() => handleEditCusto(custo.id)} className="w-8 h-8 flex items-center justify-center text-blue-600 hover:text-blue-700 transition-colors cursor-pointer">
                               <i className="ri-edit-line text-lg"></i>
                             </button>
-                            <button className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-red-600 transition-colors cursor-pointer">
+                            <button onClick={() => handleDeleteCusto(custo.id)} className="w-8 h-8 flex items-center justify-center text-yellow-500 hover:text-yellow-600 transition-colors cursor-pointer">
                               <i className="ri-delete-bin-line text-lg"></i>
                             </button>
                           </div>

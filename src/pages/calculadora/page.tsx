@@ -292,7 +292,7 @@ export default function Calculadora() {
                             onClick={() => removerComodo(comodo.id)}
                             className="w-8 h-8 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           >
-                            <i className="ri-delete-bin-line text-lg"></i>
+                            <i className="ri-delete-bin-line text-lg text-yellow-500"></i>
                           </button>
                         )}
                       </div>

@@ -8,6 +8,10 @@ export default function Projetos() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; id: string | null }>(
+    { open: false, id: null }
+  );
   const [novoProjeto, setNovoProjeto] = useState({
     nome: '',
     tipo: 'casa',
@@ -15,6 +19,7 @@ export default function Projetos() {
     area: '',
     padrao: 'medio',
     orcamento: '',
+    valorCompra: '',
     dataInicio: '',
     dataTermino: '',
     observacoes: ''
@@ -61,7 +66,7 @@ export default function Projetos() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId) return alert('Usuário não autenticado');
-    const projeto = {
+    const projeto: any = {
       nome: novoProjeto.nome,
       tipo: novoProjeto.tipo,
       endereco: novoProjeto.endereco,
@@ -75,6 +80,12 @@ export default function Projetos() {
       gasto_total: 0,
       status: 'em-andamento'
     };
+
+    // Only include `valor_compra` when user provided a value — avoids PostgREST errors
+    // if the column is not present in the remote DB schema yet.
+    if (novoProjeto.valorCompra && novoProjeto.valorCompra !== '') {
+      projeto.valor_compra = parseFloat(novoProjeto.valorCompra);
+    }
     try {
       // ensure user exists in `users` table to satisfy FK constraint
       const stored = localStorage.getItem('user');
@@ -86,33 +97,72 @@ export default function Projetos() {
       console.warn('Could not ensure user record before creating projeto', e);
     }
 
-    const { data, error } = await supabase.from('projetos').insert([projeto]).select();
-    if (error) {
-      console.error(error);
-      alert('Erro ao criar projeto');
-      return;
+    if (editingProjectId) {
+      const { data: updated, error: updErr } = await supabase
+        .from('projetos')
+        .update(projeto)
+        .eq('id', editingProjectId)
+        .select();
+      if (updErr) {
+        console.error(updErr);
+        alert('Erro ao atualizar projeto');
+        return;
+      }
+      const normalizeProjeto = (p: any) => ({
+        ...p,
+        area: p.area ?? p.area,
+        orcamento: typeof p.orcamento === 'number' ? p.orcamento : (p.orcamento ?? 0),
+        valorCompra: p.valor_compra ?? p.valorCompra ?? 0,
+        gastoTotal: p.gasto_total ?? p.gastoTotal ?? 0,
+        dataInicio: p.data_inicio ?? p.dataInicio ?? null,
+        dataTermino: p.data_termino ?? p.dataTermino ?? null
+      });
+      setProjetos(prev => prev.map(p => p.id === editingProjectId ? normalizeProjeto((updated || [])[0] || projeto) : p));
+      setShowModal(false);
+      setEditingProjectId(null);
+      setNovoProjeto({
+        nome: '',
+        tipo: 'casa',
+        endereco: '',
+        area: '',
+        padrao: 'medio',
+        orcamento: '',
+        valorCompra: '',
+        dataInicio: '',
+        dataTermino: '',
+        observacoes: ''
+      });
+    } else {
+      const { data, error } = await supabase.from('projetos').insert([projeto]).select();
+      if (error) {
+        console.error(error);
+        alert('Erro ao criar projeto');
+        return;
+      }
+      const normalizeProjeto = (p: any) => ({
+        ...p,
+        area: p.area ?? p.area,
+        orcamento: typeof p.orcamento === 'number' ? p.orcamento : (p.orcamento ?? 0),
+        valorCompra: p.valor_compra ?? p.valorCompra ?? 0,
+        gastoTotal: p.gasto_total ?? p.gastoTotal ?? 0,
+        dataInicio: p.data_inicio ?? p.dataInicio ?? null,
+        dataTermino: p.data_termino ?? p.dataTermino ?? null
+      });
+      setProjetos(prev => [ ...((data || []).map(normalizeProjeto)), ...prev ]);
+      setShowModal(false);
+      setNovoProjeto({
+        nome: '',
+        tipo: 'casa',
+        endereco: '',
+        area: '',
+        padrao: 'medio',
+        orcamento: '',
+        valorCompra: '',
+        dataInicio: '',
+        dataTermino: '',
+        observacoes: ''
+      });
     }
-    const normalizeProjeto = (p: any) => ({
-      ...p,
-      area: p.area ?? p.area,
-      orcamento: typeof p.orcamento === 'number' ? p.orcamento : (p.orcamento ?? 0),
-      gastoTotal: p.gasto_total ?? p.gastoTotal ?? 0,
-      dataInicio: p.data_inicio ?? p.dataInicio ?? null,
-      dataTermino: p.data_termino ?? p.dataTermino ?? null
-    });
-    setProjetos(prev => [ ...((data || []).map(normalizeProjeto)), ...prev ]);
-    setShowModal(false);
-    setNovoProjeto({
-      nome: '',
-      tipo: 'casa',
-      endereco: '',
-      area: '',
-      padrao: 'medio',
-      orcamento: '',
-      dataInicio: '',
-      dataTermino: '',
-      observacoes: ''
-    });
   };
 
   const calcularProgresso = (orcamento: number, gasto: number) => {
@@ -153,14 +203,13 @@ export default function Projetos() {
             <p className="text-gray-600 mt-1">Gerencie todos os seus projetos em um só lugar</p>
           </div>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => { setEditingProjectId(null); setNovoProjeto({ nome: '', tipo: 'casa', endereco: '', area: '', padrao: 'medio', orcamento: '', valorCompra: '', dataInicio: '', dataTermino: '', observacoes: '' }); setShowModal(true); }}
             className="flex items-center gap-2 bg-teal-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-teal-600 transition-colors shadow-lg whitespace-nowrap cursor-pointer"
           >
             <i className="ri-add-line text-xl"></i>
             Nova Obra
           </button>
         </div>
-
         {/* Grid de Projetos */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projetos.map((projeto) => {
@@ -176,18 +225,45 @@ export default function Projetos() {
                     <h3 className="text-xl font-bold text-gray-800 mb-1">{projeto.nome}</h3>
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <i className="ri-building-line"></i>
-                      <span className="capitalize">{projeto.tipo.replace('-', ' ')}</span>
+                      <span className="capitalize">{projeto.tipo ? projeto.tipo.replace('-', ' ') : ''}</span>
                     </div>
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                    projeto.status === 'em-andamento' 
-                      ? 'bg-orange-100 text-orange-700'
-                      : projeto.status === 'concluido'
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-100 text-gray-700'
-                  }`}>
-                    {projeto.status === 'em-andamento' ? 'Em Andamento' : 
-                     projeto.status === 'concluido' ? 'Concluído' : 'Planejamento'}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingProjectId(projeto.id); setNovoProjeto({
+                        nome: projeto.nome ?? '',
+                        tipo: projeto.tipo ?? 'casa',
+                        endereco: projeto.endereco ?? '',
+                        area: projeto.area ? String(projeto.area) : '',
+                        padrao: projeto.padrao ?? 'medio',
+                        orcamento: projeto.orcamento ? String(projeto.orcamento) : '',
+                        valorCompra: projeto.valorCompra ? String(projeto.valorCompra) : '',
+                        dataInicio: projeto.dataInicio ? projeto.dataInicio : '',
+                        dataTermino: projeto.dataTermino ? projeto.dataTermino : '',
+                        observacoes: projeto.observacoes ?? ''
+                      }); setShowModal(true); }}
+                      className="w-8 h-8 flex items-center justify-center text-blue-600 hover:text-blue-700 transition-colors cursor-pointer"
+                      title="Editar projeto"
+                    >
+                      <i className="ri-edit-line text-lg"></i>
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteModal({ open: true, id: projeto.id }); }}
+                      className="w-8 h-8 flex items-center justify-center text-yellow-500 hover:text-yellow-600 transition-colors cursor-pointer"
+                      title="Excluir projeto"
+                    >
+                      <i className="ri-delete-bin-line text-lg"></i>
+                    </button>
+                    <div className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                      projeto.status === 'em-andamento' 
+                        ? 'bg-orange-100 text-orange-700'
+                        : projeto.status === 'concluido'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {projeto.status === 'em-andamento' ? 'Em Andamento' : 
+                       projeto.status === 'concluido' ? 'Concluído' : 'Planejamento'}
+                    </div>
                   </div>
                 </div>
 
@@ -217,6 +293,14 @@ export default function Projetos() {
                       R$ {projeto.orcamento.toLocaleString('pt-BR')}
                     </span>
                   </div>
+                  {projeto.valorCompra > 0 && (
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-600">Valor do Bem</span>
+                      <span className="text-sm font-semibold text-gray-800">
+                        R$ {Number(projeto.valorCompra).toLocaleString('pt-BR')}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-gray-600">Gasto</span>
                     <span className="text-sm font-semibold text-teal-600">
@@ -243,6 +327,16 @@ export default function Projetos() {
                     }`}>
                       R$ {(projeto.orcamento - projeto.gastoTotal).toLocaleString('pt-BR')} restante
                     </span>
+                  </div>
+
+                  {/* Estimativa de patrimônio */}
+                  <div className="border-t pt-3 mt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Estimativa de Patrimônio</span>
+                      <span className="text-sm font-semibold text-green-700">
+                        R$ {(Number(projeto.valorCompra ?? 0) + Number(projeto.orcamento ?? 0)).toLocaleString('pt-BR')}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -373,6 +467,20 @@ export default function Projetos() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Valor do Imóvel / Terreno (R$)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={novoProjeto.valorCompra}
+                  onChange={(e) => setNovoProjeto({...novoProjeto, valorCompra: e.target.value})}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                  placeholder="Ex: 150000.00"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -429,6 +537,40 @@ export default function Projetos() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Delete Confirmation Modal */}
+      {deleteModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40"></div>
+          <div className="bg-white rounded-lg shadow-xl p-6 z-10 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4">Deseja Realmente exlcuir este projeto</h3>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteModal({ open: false, id: null })}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  if (!deleteModal.id) return setDeleteModal({ open: false, id: null });
+                  const { error } = await supabase.from('projetos').delete().eq('id', deleteModal.id);
+                  if (error) {
+                    console.error(error);
+                    alert('Erro ao excluir projeto');
+                    setDeleteModal({ open: false, id: null });
+                    return;
+                  }
+                  setProjetos(prev => prev.filter(p => p.id !== deleteModal.id));
+                  setDeleteModal({ open: false, id: null });
+                }}
+                className="px-4 py-2 rounded-lg bg-yellow-400 text-white hover:bg-yellow-500"
+              >
+                Confirmar
+              </button>
+            </div>
           </div>
         </div>
       )}

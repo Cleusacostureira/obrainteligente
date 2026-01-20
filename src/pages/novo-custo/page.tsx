@@ -5,6 +5,8 @@ import { supabase } from '../../lib/supabase';
 export default function NovoCusto() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const query = new URLSearchParams(window.location.search);
+  const editingCustoId = query.get('custoId');
   const [projeto, setProjeto] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -20,6 +22,22 @@ export default function NovoCusto() {
       const { data, error } = await supabase.from('projetos').select('*').eq('id', id).eq('owner', u.id).single();
       if (error) console.error(error);
       setProjeto(data || null);
+      // if editing, load custo data
+      if (editingCustoId) {
+        const { data: custoData, error: custoErr } = await supabase.from('custos').select('*').eq('id', editingCustoId).single();
+        if (custoErr) console.error(custoErr);
+        if (custoData) {
+          setFormData({
+            data: custoData.data ?? new Date().toISOString().split('T')[0],
+            categoria: custoData.categoria ?? 'materiais',
+            descricao: custoData.descricao ?? '',
+            quantidade: String(custoData.quantidade ?? ''),
+            valorUnitario: String(custoData.valor_unitario ?? ''),
+            formaPagamento: custoData.forma_pagamento ?? 'a-vista',
+            observacoes: custoData.observacoes ?? ''
+          });
+        }
+      }
       setLoading(false);
     };
     load();
@@ -80,14 +98,25 @@ export default function NovoCusto() {
       valor_total: valorTotal,
       forma_pagamento: formData.formaPagamento,
     };
-    const { data, error } = await supabase.from('custos').insert([custo]).select();
-    if (error) {
-      console.error(error);
-      alert('Erro ao lançar custo');
-      return;
+    if (editingCustoId) {
+      const { data, error } = await supabase.from('custos').update(custo).eq('id', editingCustoId).select();
+      if (error) {
+        console.error(error);
+        alert('Erro ao atualizar lançamento');
+        return;
+      }
+      alert(`Lançamento atualizado com sucesso!\nValor Total: R$ ${valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+      navigate(`/projeto/${id}`);
+    } else {
+      const { data, error } = await supabase.from('custos').insert([custo]).select();
+      if (error) {
+        console.error(error);
+        alert('Erro ao lançar custo');
+        return;
+      }
+      alert(`Custo lançado com sucesso!\nValor Total: R$ ${valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+      navigate(`/projeto/${id}`);
     }
-    alert(`Custo lançado com sucesso!\nValor Total: R$ ${valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
-    navigate(`/projeto/${id}`);
   };
 
   const calcularValorTotal = () => {
@@ -217,10 +246,10 @@ export default function NovoCusto() {
               </div>
 
               {/* Valor Total */}
-              <div className="bg-teal-50 border-2 border-teal-200 rounded-xl p-4">
+              <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-teal-800">Valor Total:</span>
-                  <span className="text-2xl font-bold text-teal-800">
+                  <span className="text-sm font-semibold text-green-700">Valor Total:</span>
+                  <span className="text-2xl font-bold text-green-700">
                     R$ {calcularValorTotal().toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </span>
                 </div>

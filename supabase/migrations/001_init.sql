@@ -22,6 +22,7 @@ create table if not exists projetos (
   area numeric,
   padrao text,
   orcamento numeric,
+  valor_compra numeric,
   gasto_total numeric default 0,
   data_inicio date,
   data_termino date,

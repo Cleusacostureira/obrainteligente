@@ -37,6 +37,12 @@ export default function Login() {
         if (error) throw error;
         const user = data.user;
         if (user) {
+          // Ensure users table has this user so FK in projetos is satisfied
+          try {
+            await supabase.from('users').upsert({ id: user.id, email: user.email, name: (user.user_metadata as any)?.name || null });
+          } catch (e) {
+            console.warn('Could not upsert user record:', e);
+          }
           localStorage.setItem('user', JSON.stringify({ id: user.id, email: user.email }));
           navigate('/projetos');
         }
@@ -64,6 +70,11 @@ export default function Login() {
         }
         const newUser = signInData.user;
         if (newUser) {
+          try {
+            await supabase.from('users').upsert({ id: newUser.id, email: newUser.email, name: formData.name || null });
+          } catch (e) {
+            console.warn('Could not upsert user record after signup:', e);
+          }
           localStorage.setItem('user', JSON.stringify({ id: newUser.id, email: newUser.email }));
           navigate('/projetos');
         }
