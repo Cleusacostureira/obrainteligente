@@ -66,6 +66,17 @@ export default function Projetos() {
       gasto_total: 0,
       status: 'em-andamento'
     };
+    try {
+      // ensure user exists in `users` table to satisfy FK constraint
+      const stored = localStorage.getItem('user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        await supabase.from('users').upsert({ id: u.id, email: u.email, name: u.name || null });
+      }
+    } catch (e) {
+      console.warn('Could not ensure user record before creating projeto', e);
+    }
+
     const { data, error } = await supabase.from('projetos').insert([projeto]).select();
     if (error) {
       console.error(error);
