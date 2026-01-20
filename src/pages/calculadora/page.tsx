@@ -1,20 +1,62 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { mockProjetos } from '../../mocks/projetos';
-import { coeficientesMateriais, tabelaPrecos } from '../../mocks/materiais';
+import { supabase } from '../../lib/supabase';
 
 export default function Calculadora() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const projeto = mockProjetos.find(p => p.id === id);
+  const [projeto, setProjeto] = useState<any | null>(null);
 
   const [modoCalculo, setModoCalculo] = useState<'simples' | 'avancado'>('simples');
-  const [areaTotal, setAreaTotal] = useState(projeto?.area.toString() || '');
+  const [areaTotal, setAreaTotal] = useState('');
   const [comodos, setComodos] = useState([
     { id: '1', nome: '', largura: '', comprimento: '', altura: '2.70' }
   ]);
   const [resultado, setResultado] = useState<any>(null);
-  const [precos, setPrecos] = useState(tabelaPrecos);
+  const [precos, setPrecos] = useState({
+    areiaGrossa: 85.0,
+    areiaFina: 75.0,
+    pedraBrita: 90.0,
+    cimento: 32.5,
+    tijolo: 0.85
+  });
+
+  const [coeficientesMateriais, setCoeficientesMateriais] = useState<any | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (!stored) {
+      navigate('/');
+      return;
+    }
+    const u = JSON.parse(stored);
+
+    const load = async () => {
+      const { data: projData, error: projErr } = await supabase.from('projetos').select('*').eq('id', id).eq('owner', u.id).single();
+      if (projErr) console.error(projErr);
+      setProjeto(projData || null);
+
+      // load precos
+      const { data: precosData, error: precosErr } = await supabase.from('materiais_precos').select('*');
+      if (!precosErr && precosData) {
+        const obj: any = {};
+        precosData.forEach((row: any) => { obj[row.key] = row.preco; });
+        setPrecos((p) => ({ ...p, ...obj }));
+      }
+
+      // load coeficientes for projeto type/padrao
+      if (projData) {
+        const { data: coefData, error: coefErr } = await supabase
+          .from('materiais_coeficientes')
+          .select('coeficientes')
+          .eq('tipo', projData.tipo)
+          .eq('padrao', projData.padrao)
+          .single();
+        if (!coefErr && coefData) setCoeficientesMateriais(coefData.coeficientes);
+      }
+    };
+    load();
+  }, [id, navigate]);
 
   if (!projeto) {
     return (

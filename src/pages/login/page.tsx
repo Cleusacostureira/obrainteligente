@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -11,16 +12,51 @@ export default function Login() {
     name: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulação de login - implementar com Supabase futuramente
-    if (isLogin) {
-      localStorage.setItem('user', JSON.stringify({ email: formData.email }));
-      navigate('/projetos');
-    } else {
-      // Registro
-      localStorage.setItem('user', JSON.stringify({ email: formData.email, name: formData.name }));
-      navigate('/projetos');
+    try {
+      if (isLogin) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
+        if (error) throw error;
+        const user = data.user;
+        if (user) {
+          localStorage.setItem('user', JSON.stringify({ id: user.id, email: user.email }));
+          navigate('/projetos');
+        }
+      } else {
+        if (formData.password !== formData.confirmPassword) {
+          alert('As senhas não conferem');
+          return;
+        }
+        const { data, error } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: { data: { name: formData.name } }
+        });
+        if (error) throw error;
+        // After sign up, try sign in to obtain session
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
+        if (signInError) {
+          // signup can require email confirmation depending on Supabase settings
+          alert('Conta criada. Confirme seu e-mail se necessário e faça login.');
+          navigate('/projetos');
+          return;
+        }
+        const newUser = signInData.user;
+        if (newUser) {
+          localStorage.setItem('user', JSON.stringify({ id: newUser.id, email: newUser.email }));
+          navigate('/projetos');
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Erro ao autenticar');
     }
   };
 

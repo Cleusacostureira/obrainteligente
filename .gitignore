@@ -20,3 +20,5 @@ coverage/
 /.pnp
 /.pnp.js
 /.DS_Storenode_modules
+
+.vercel

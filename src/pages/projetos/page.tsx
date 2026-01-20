@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { mockProjetos } from '../../mocks/projetos';
+import { supabase } from '../../lib/supabase';
 
 export default function Projetos() {
   const navigate = useNavigate();
-  const [projetos, setProjetos] = useState(mockProjetos);
+  const [projetos, setProjetos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [novoProjeto, setNovoProjeto] = useState({
     nome: '',
@@ -18,22 +20,59 @@ export default function Projetos() {
     observacoes: ''
   });
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem('user');
     navigate('/');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (!stored) {
+      navigate('/');
+      return;
+    }
+    const u = JSON.parse(stored);
+    setUserId(u.id);
+
+    const load = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('projetos')
+        .select('*')
+        .eq('owner', u.id)
+        .order('created_at', { ascending: false });
+      if (error) console.error(error);
+      setProjetos(data || []);
+      setLoading(false);
+    };
+    load();
+  }, [navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!userId) return alert('Usuário não autenticado');
     const projeto = {
-      id: Date.now().toString(),
-      ...novoProjeto,
+      nome: novoProjeto.nome,
+      tipo: novoProjeto.tipo,
+      endereco: novoProjeto.endereco,
       area: parseFloat(novoProjeto.area),
+      padrao: novoProjeto.padrao,
       orcamento: parseFloat(novoProjeto.orcamento),
-      gastoTotal: 0,
+      data_inicio: novoProjeto.dataInicio || null,
+      data_termino: novoProjeto.dataTermino || null,
+      observacoes: novoProjeto.observacoes,
+      owner: userId,
+      gasto_total: 0,
       status: 'em-andamento'
     };
-    setProjetos([...projetos, projeto]);
+    const { data, error } = await supabase.from('projetos').insert([projeto]).select();
+    if (error) {
+      console.error(error);
+      alert('Erro ao criar projeto');
+      return;
+    }
+    setProjetos(prev => [ ...(data || []), ...prev ]);
     setShowModal(false);
     setNovoProjeto({
       nome: '',

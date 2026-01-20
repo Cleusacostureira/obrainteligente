@@ -1,11 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { mockProjetos } from '../../mocks/projetos';
+import { supabase } from '../../lib/supabase';
 
 export default function NovoCusto() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const projeto = mockProjetos.find(p => p.id === id);
+  const [projeto, setProjeto] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (!stored) {
+      navigate('/');
+      return;
+    }
+    const u = JSON.parse(stored);
+    const load = async () => {
+      setLoading(true);
+      const { data, error } = await supabase.from('projetos').select('*').eq('id', id).eq('owner', u.id).single();
+      if (error) console.error(error);
+      setProjeto(data || null);
+      setLoading(false);
+    };
+    load();
+  }, [id, navigate]);
 
   const [formData, setFormData] = useState({
     data: new Date().toISOString().split('T')[0],
@@ -45,9 +63,29 @@ export default function NovoCusto() {
     );
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!projeto) return alert('Projeto não encontrado');
     const valorTotal = parseFloat(formData.quantidade) * parseFloat(formData.valorUnitario);
+    const stored = localStorage.getItem('user');
+    if (!stored) return navigate('/');
+    const u = JSON.parse(stored);
+    const custo = {
+      projeto_id: id,
+      data: formData.data,
+      categoria: formData.categoria,
+      descricao: formData.descricao,
+      quantidade: parseFloat(formData.quantidade),
+      valor_unitario: parseFloat(formData.valorUnitario),
+      valor_total: valorTotal,
+      forma_pagamento: formData.formaPagamento,
+    };
+    const { data, error } = await supabase.from('custos').insert([custo]).select();
+    if (error) {
+      console.error(error);
+      alert('Erro ao lançar custo');
+      return;
+    }
     alert(`Custo lançado com sucesso!\nValor Total: R$ ${valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
     navigate(`/projeto/${id}`);
   };

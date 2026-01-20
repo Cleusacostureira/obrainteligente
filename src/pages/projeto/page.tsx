@@ -1,24 +1,51 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { mockProjetos } from '../../mocks/projetos';
-import { mockCustos } from '../../mocks/custos';
+import { supabase } from '../../lib/supabase';
 
 export default function ProjetoDetalhes() {
-  const { id } = useParams<{ id: string }>(); // garante que `id` seja string
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  // Declarar todos os hooks primeiro
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [custos] = useState(mockCustos);
+  const [custos, setCustos] = useState<any[]>([]);
+  const [projeto, setProjeto] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Depois fazer as verificações condicionais
-  // Caso o parâmetro não esteja presente, redireciona para a lista de projetos
   if (!id) {
     navigate('/projetos');
     return null;
   }
 
-  const projeto = mockProjetos.find(p => p.id === id);
+  useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (!stored) {
+      navigate('/');
+      return;
+    }
+    const u = JSON.parse(stored);
+
+    const load = async () => {
+      setLoading(true);
+      const { data: projData, error: projErr } = await supabase
+        .from('projetos')
+        .select('*')
+        .eq('id', id)
+        .eq('owner', u.id)
+        .single();
+      if (projErr) console.error(projErr);
+      setProjeto(projData || null);
+
+      const { data: custosData, error: custosErr } = await supabase
+        .from('custos')
+        .select('*')
+        .eq('projeto_id', id)
+        .order('data', { ascending: false });
+      if (custosErr) console.error(custosErr);
+      setCustos(custosData || []);
+      setLoading(false);
+    };
+    load();
+  }, [id, navigate]);
 
   if (!projeto) {
     return (
