@@ -1,3 +1,32 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Prevent horizontal scrolling on small devices and ensure content fits */
+html, body, #root {
+	max-width: 100%;
+	overflow-x: hidden;
+	-webkit-overflow-scrolling: touch;
+}
+
+/* Make images, modals and fixed elements responsive */
+img, .rounded-2xl, .object-contain {
+	max-width: 100%;
+}
+
+/* Tables: allow wrapping and avoid forcing horizontal scroll */
+table {
+	width: 100%;
+	table-layout: auto;
+}
+th, td {
+	word-break: break-word;
+}
+
+/* Utility for containers to avoid side overflow when using large paddings */
+.safe-container {
+	box-sizing: border-box;
+	padding-left: 1rem;
+	padding-right: 1rem;
+	max-width: 100%;
+}

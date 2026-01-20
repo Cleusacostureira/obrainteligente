@@ -44,6 +44,7 @@ export default function Projetos() {
       ...p,
       area: p.area ?? p.area,
       orcamento: typeof p.orcamento === 'number' ? p.orcamento : (p.orcamento ?? 0),
+      valorCompra: p.valor_compra ?? p.valorCompra ?? 0,
       gastoTotal: p.gasto_total ?? p.gastoTotal ?? 0,
       dataInicio: p.data_inicio ?? p.dataInicio ?? null,
       dataTermino: p.data_termino ?? p.dataTermino ?? null
