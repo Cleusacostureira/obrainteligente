@@ -35,6 +35,15 @@ export default function Projetos() {
     const u = JSON.parse(stored);
     setUserId(u.id);
 
+    const normalizeProjeto = (p: any) => ({
+      ...p,
+      area: p.area ?? p.area,
+      orcamento: typeof p.orcamento === 'number' ? p.orcamento : (p.orcamento ?? 0),
+      gastoTotal: p.gasto_total ?? p.gastoTotal ?? 0,
+      dataInicio: p.data_inicio ?? p.dataInicio ?? null,
+      dataTermino: p.data_termino ?? p.dataTermino ?? null
+    });
+
     const load = async () => {
       setLoading(true);
       const { data, error } = await supabase
@@ -43,7 +52,7 @@ export default function Projetos() {
         .eq('owner', u.id)
         .order('created_at', { ascending: false });
       if (error) console.error(error);
-      setProjetos(data || []);
+      setProjetos((data || []).map(normalizeProjeto));
       setLoading(false);
     };
     load();
@@ -83,7 +92,15 @@ export default function Projetos() {
       alert('Erro ao criar projeto');
       return;
     }
-    setProjetos(prev => [ ...(data || []), ...prev ]);
+    const normalizeProjeto = (p: any) => ({
+      ...p,
+      area: p.area ?? p.area,
+      orcamento: typeof p.orcamento === 'number' ? p.orcamento : (p.orcamento ?? 0),
+      gastoTotal: p.gasto_total ?? p.gastoTotal ?? 0,
+      dataInicio: p.data_inicio ?? p.dataInicio ?? null,
+      dataTermino: p.data_termino ?? p.dataTermino ?? null
+    });
+    setProjetos(prev => [ ...((data || []).map(normalizeProjeto)), ...prev ]);
     setShowModal(false);
     setNovoProjeto({
       nome: '',
