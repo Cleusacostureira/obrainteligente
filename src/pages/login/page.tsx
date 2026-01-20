@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -15,6 +15,20 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      if (!isSupabaseConfigured) {
+        // Local fallback for development when Supabase isn't configured
+        if (!isLogin) {
+          if (formData.password !== formData.confirmPassword) {
+            alert('As senhas não conferem');
+            return;
+          }
+        }
+        const mockUser = { id: Date.now().toString(), email: formData.email, name: formData.name };
+        localStorage.setItem('user', JSON.stringify(mockUser));
+        navigate('/projetos');
+        return;
+      }
+
       if (isLogin) {
         const { data, error } = await supabase.auth.signInWithPassword({
           email: formData.email,
