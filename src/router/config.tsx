@@ -5,6 +5,7 @@ const Login = lazy(() => import('../pages/login/page'));
 const Projetos = lazy(() => import('../pages/projetos/page'));
 const ProjetoDetalhes = lazy(() => import('../pages/projeto/page'));
 const Calculadora = lazy(() => import('../pages/calculadora/page'));
+const PlantaProjeto = lazy(() => import('../pages/projeto/planta/page'));
 const NovoCusto = lazy(() => import('../pages/novo-custo/page'));
 const NotFound = lazy(() => import('../pages/NotFound'));
 
@@ -32,6 +33,10 @@ const routes: RouteObject[] = [
   {
     path: '/projeto/:id/novo-custo',
     element: <NovoCusto />,
+  },
+  {
+    path: '/projeto/:id/planta',
+    element: <PlantaProjeto />,
   },
   {
     path: '*',
