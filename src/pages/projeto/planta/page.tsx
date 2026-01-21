@@ -16,6 +16,10 @@ export default function PlantaPage() {
 
   // editor state (positions in meters)
   const [placedRooms, setPlacedRooms] = useState<any[]>([] as any[]);
+  const [placedWalls, setPlacedWalls] = useState<any[]>([] as any[]);
+  const [wallMode, setWallMode] = useState<'idle'|'placing'>('idle');
+  const wallStartRef = useRef<{x:number,y:number}|null>(null);
+  const [selectedWallId, setSelectedWallId] = useState<string| null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const pixelsPerMeter = 50; // scale for the editor
   const gridStep = 0.5; // meters for snapping
@@ -128,7 +132,7 @@ export default function PlantaPage() {
     return { totalWallLen: segs.reduce((s,x)=>s+x.len,0), externalLen };
   }
 
-  const planta: Planta = { ambientes: placedRooms.map((r) => ({ id: r.id, name: r.name, width: r.width, length: r.length, height: r.height, isClosed: r.isClosed, countsAsAlvenaria: r.countsAsAlvenaria, hasForro: r.hasForro })) };
+  const planta: Planta = { ambientes: placedRooms.map((r) => ({ id: r.id, name: r.name, width: r.width, length: r.length, height: r.height, isClosed: r.isClosed, countsAsAlvenaria: r.countsAsAlvenaria, hasForro: r.hasForro })), paredes: placedWalls };
   const metrics = calculatePlantaMetrics(planta, coefs);
   const segsInfo = computeWallSegments(placedRooms);
 
@@ -139,7 +143,7 @@ export default function PlantaPage() {
     if (!params.id) return alert('Projeto não identificado');
     setSaving(true);
     try {
-      const payload = { ambientes: placedRooms };
+      const payload = { ambientes: placedRooms, paredes: placedWalls };
       const { data: existing } = await supabase.from('plantas').select('id').eq('projeto_id', params.id).limit(1).single().catch(() => ({ data: null }));
       if (existing && existing.id) {
         const { error } = await supabase.from('plantas').update({ data: payload, updated_at: new Date().toISOString() }).eq('id', existing.id);
@@ -164,8 +168,9 @@ export default function PlantaPage() {
       if (error) throw error;
       if (!data || !data.data) return alert('Nenhuma planta encontrada para este projeto');
       const doc = data.data as any;
-      // load ambientes with positions
+      // load ambientes and paredes with positions
       setPlacedRooms(doc.ambientes || []);
+      setPlacedWalls(doc.paredes || []);
       setAmbientes((doc.ambientes || []).map((a:any) => ({ id: a.id, name: a.name, width: a.width, length: a.length, height: a.height, isClosed: a.isClosed, countsAsAlvenaria: a.countsAsAlvenaria, hasForro: a.hasForro })));
       setLoadedPlantaId(data.id);
       alert('Planta carregada');
@@ -173,6 +178,29 @@ export default function PlantaPage() {
       console.error(err);
       alert('Erro ao carregar planta: ' + (err.message || err));
     }
+  }
+
+  // Wall placement handlers
+  function onSvgClickForWall(e: React.MouseEvent) {
+    if (wallMode !== 'placing' || !svgRef.current) return;
+    const svg = svgRef.current;
+    const pt = svg.createSVGPoint(); pt.x = (e as any).clientX; pt.y = (e as any).clientY;
+    const ctm = svg.getScreenCTM(); if (!ctm) return;
+    const loc = pt.matrixTransform(ctm.inverse());
+    const mx = toMeters(loc.x); const my = toMeters(loc.y);
+    if (!wallStartRef.current) {
+      wallStartRef.current = { x: mx, y: my };
+      return;
+    }
+    // finish wall
+    const start = wallStartRef.current; wallStartRef.current = null; setWallMode('idle');
+    const id = String(Date.now());
+    const newWall = { id, x1: start.x, y1: start.y, x2: mx, y2: my, thickness: 0.10, height: 2.7, type: 'interna', openings: [] };
+    setPlacedWalls((s) => [...s, newWall]);
+  }
+
+  function addOpeningToWall(wallId: string, opening: any) {
+    setPlacedWalls((s) => s.map((w) => w.id === wallId ? { ...w, openings: [...(w.openings||[]), opening] } : w));
   }
 
   function handleCalcular() {
@@ -242,10 +270,30 @@ export default function PlantaPage() {
         </div>
 
         <div className="col-span-2">
+          <div className="p-4 border rounded mb-4">
+            <h2 className="font-semibold">Ferramentas</h2>
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => setWallMode(w => w === 'placing' ? 'idle' : 'placing')} className={`px-3 py-1 rounded ${wallMode==='placing'?'bg-yellow-500':'bg-gray-200'}`}>{wallMode==='placing'?'Cancelar Parede':'Adicionar Parede'}</button>
+              <button onClick={() => {
+                if (!selectedWallId) return alert('Selecione uma parede');
+                const width = parseFloat(prompt('Largura da porta (m)', '0.8') || '0.8');
+                const offset = parseFloat(prompt('Offset da parede (m) a partir do início', '0.2') || '0.2');
+                addOpeningToWall(selectedWallId, { id: String(Date.now()), type: 'porta', width, height: 2.1, offset });
+              }} className="px-3 py-1 rounded bg-green-600 text-white">Adicionar Porta</button>
+              <button onClick={() => {
+                if (!selectedWallId) return alert('Selecione uma parede');
+                const width = parseFloat(prompt('Largura da janela (m)', '1.0') || '1.0');
+                const offset = parseFloat(prompt('Offset da parede (m) a partir do início', '0.5') || '0.5');
+                addOpeningToWall(selectedWallId, { id: String(Date.now()), type: 'janela', width, height: 1.2, offset });
+              }} className="px-3 py-1 rounded bg-amber-500">Adicionar Janela</button>
+            </div>
+            <div className="text-xs text-gray-600 mt-2">Clique no canvas para definir início e fim da parede quando em modo "Adicionar Parede".</div>
+          </div>
           <div className="p-2 border rounded mb-4">
             <div className="text-sm text-gray-600">Editor (arraste retângulos; snap {gridStep} m)</div>
             <div className="overflow-auto mt-2">
               <svg ref={svgRef} width={800} height={600} className="bg-white border" onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+                <rect x={0} y={0} width={800} height={600} fill="transparent" onClick={onSvgClickForWall} />
                 {/* grid */}
                 {Array.from({length: 40}).map((_,i)=> (
                   <line key={'v'+i} x1={toPixels(i*0.5)} y1={0} x2={toPixels(i*0.5)} y2={600} stroke="#f3f4f6" strokeWidth={1} />
@@ -259,6 +307,20 @@ export default function PlantaPage() {
                     <rect x={toPixels(r.x)} y={toPixels(r.y)} width={toPixels(r.width)} height={toPixels(r.length)} fill="#bfdbfe" stroke="#0369a1" strokeWidth={2} rx={6}
                       onPointerDown={(e) => onPointerDown(e, r.id)} />
                     <text x={toPixels(r.x)+6} y={toPixels(r.y)+16} fontSize={12} fill="#064e3b">{r.name}</text>
+                  </g>
+                ))}
+                {/* walls */}
+                {placedWalls.map((w) => (
+                  <g key={w.id} onClick={() => setSelectedWallId(w.id)}>
+                    <line x1={toPixels(w.x1)} y1={toPixels(w.y1)} x2={toPixels(w.x2)} y2={toPixels(w.y2)} stroke="#111827" strokeWidth={Math.max(2, toPixels(w.thickness))} />
+                    {/* openings */}
+                    {(w.openings||[]).map((o:any, idx:number) => {
+                      // compute opening center along wall
+                      const dx = w.x2 - w.x1; const dy = w.y2 - w.y1; const len = Math.hypot(dx,dy);
+                      const ux = dx/ len; const uy = dy/ len;
+                      const ox = w.x1 + (o.offset + o.width/2) * ux; const oy = w.y1 + (o.offset + o.width/2) * uy;
+                      return <rect key={idx} x={toPixels(ox)-6} y={toPixels(oy)-6} width={12} height={12} fill={o.type==='porta'?'#ef4444':'#f59e0b'} />
+                    })}
                   </g>
                 ))}
                 {/* external perimeter highlight */}

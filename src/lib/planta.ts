@@ -13,10 +13,27 @@ export type PlantaRoom = {
 
 export type Planta = {
   ambientes: PlantaRoom[];
-  paredes?: any[]; // placeholder for future wall objects
-  portas?: any[];
-  janelas?: any[];
+  paredes?: Wall[];
+  portas?: Opening[];
+  janelas?: Opening[];
   moveis?: any[];
+};
+
+export type Wall = {
+  id: string;
+  x1: number; y1: number; x2: number; y2: number; // meters
+  thickness?: number; // m
+  height?: number; // m
+  type?: 'interna' | 'externa' | 'geminada';
+  openings?: Opening[];
+};
+
+export type Opening = {
+  id: string;
+  type: 'porta' | 'janela';
+  width: number; // m
+  height?: number; // m
+  offset: number; // meters from wall start
 };
 
 export type PlantaMetrics = {
@@ -52,7 +69,28 @@ export function calculatePlantaMetrics(planta: Planta, coefs?: Partial<CalcCoefs
     if (a.isClosed === false) perimetroExternal += perim;
   }
 
-  const areaParede = Number((areaPisoAlvenaria * cfg.fator_parede).toFixed(3));
+  // If explicit walls are provided, compute wall length and openings
+  let wallTotalLen = 0;
+  let wallExternalLen = 0;
+  let openingsArea = 0;
+  if (planta.paredes && planta.paredes.length > 0) {
+    for (const w of planta.paredes) {
+      const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+      wallTotalLen += len;
+      if (w.type === 'externa') wallExternalLen += len;
+      const h = w.height || 2.7;
+      if (w.openings) {
+        for (const o of w.openings) {
+          const oh = o.height || (o.type === 'porta' ? 2.1 : 1.2);
+          openingsArea += o.width * oh;
+        }
+      }
+    }
+  }
+
+  const areaParede = planta.paredes && planta.paredes.length > 0
+    ? Number((Math.max(0, wallTotalLen * (planta.paredes[0].height || 2.7) - openingsArea)).toFixed(3))
+    : Number((areaPisoAlvenaria * cfg.fator_parede).toFixed(3));
   const areaTelhado = Number((areaPisoTotal * cfg.fator_inclinacao).toFixed(2));
 
   // Basic validations
@@ -70,7 +108,7 @@ export function calculatePlantaMetrics(planta: Planta, coefs?: Partial<CalcCoefs
     area_parede_total: areaParede,
     area_forro: Number(areaForro.toFixed(3)),
     area_telhado: areaTelhado,
-    perimetro_externo: Number(perimetroExternal.toFixed(3)),
+    perimetro_externo: planta.paredes && planta.paredes.length > 0 ? Number(wallExternalLen.toFixed(3)) : Number(perimetroExternal.toFixed(3)),
     warnings,
   };
 }
