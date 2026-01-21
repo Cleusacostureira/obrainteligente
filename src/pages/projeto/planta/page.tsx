@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { calculatePlantaMetrics, calcularMateriaisFromPlanta, Planta, PlantaRoom } from '../../../lib/planta';
+import { supabase } from '../../../lib/supabase';
 
 // Simple SVG-based planta editor with drag/snap and shared wall detection
 export default function PlantaPage() {
@@ -131,6 +132,49 @@ export default function PlantaPage() {
   const metrics = calculatePlantaMetrics(planta, coefs);
   const segsInfo = computeWallSegments(placedRooms);
 
+  const [saving, setSaving] = useState(false);
+  const [loadedPlantaId, setLoadedPlantaId] = useState<string | null>(null);
+
+  async function savePlanta() {
+    if (!params.id) return alert('Projeto não identificado');
+    setSaving(true);
+    try {
+      const payload = { ambientes: placedRooms };
+      const { data: existing } = await supabase.from('plantas').select('id').eq('projeto_id', params.id).limit(1).single().catch(() => ({ data: null }));
+      if (existing && existing.id) {
+        const { error } = await supabase.from('plantas').update({ data: payload, updated_at: new Date().toISOString() }).eq('id', existing.id);
+        if (error) throw error;
+        setLoadedPlantaId(existing.id);
+      } else {
+        const { data, error } = await supabase.from('plantas').insert([{ projeto_id: params.id, title: `Planta ${new Date().toISOString()}`, data: payload }]).select().single();
+        if (error) throw error;
+        setLoadedPlantaId(data.id);
+      }
+      alert('Planta salva.');
+    } catch (err:any) {
+      console.error(err);
+      alert('Erro ao salvar planta: ' + (err.message || err));
+    } finally { setSaving(false); }
+  }
+
+  async function loadPlanta() {
+    if (!params.id) return alert('Projeto não identificado');
+    try {
+      const { data, error } = await supabase.from('plantas').select('id,data').eq('projeto_id', params.id).order('created_at', { ascending: false }).limit(1).single();
+      if (error) throw error;
+      if (!data || !data.data) return alert('Nenhuma planta encontrada para este projeto');
+      const doc = data.data as any;
+      // load ambientes with positions
+      setPlacedRooms(doc.ambientes || []);
+      setAmbientes((doc.ambientes || []).map((a:any) => ({ id: a.id, name: a.name, width: a.width, length: a.length, height: a.height, isClosed: a.isClosed, countsAsAlvenaria: a.countsAsAlvenaria, hasForro: a.hasForro })));
+      setLoadedPlantaId(data.id);
+      alert('Planta carregada');
+    } catch (err:any) {
+      console.error(err);
+      alert('Erro ao carregar planta: ' + (err.message || err));
+    }
+  }
+
   function handleCalcular() {
     const res = calcularMateriaisFromPlanta(planta, precos, coefs as any);
     setMaterialRows(res.rows || []);
@@ -190,7 +234,9 @@ export default function PlantaPage() {
             <label className="block text-sm mt-2">Fator inclinação telhado</label>
             <input type="number" step="0.01" value={coefs.fator_inclinacao} onChange={(e) => setCoefs({ ...coefs, fator_inclinacao: parseFloat(e.target.value) })} className="w-full p-2 border rounded" />
             <div className="mt-2">
-              <button onClick={handleCalcular} className="bg-blue-600 text-white px-3 py-1 rounded">Calcular materiais</button>
+                <button onClick={handleCalcular} className="bg-blue-600 text-white px-3 py-1 rounded">Calcular materiais</button>
+                <button onClick={savePlanta} disabled={saving} className="ml-2 bg-emerald-600 text-white px-3 py-1 rounded">{saving ? 'Salvando...' : 'Salvar planta'}</button>
+                <button onClick={loadPlanta} className="ml-2 bg-slate-600 text-white px-3 py-1 rounded">Carregar planta</button>
             </div>
           </div>
         </div>
