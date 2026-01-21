@@ -1,514 +1,343 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { calcularEstimativa, CalculadoraInput, MaterialRow, Room, Coefs } from '../../lib/calculadora';
 import { supabase } from '../../lib/supabase';
 
-export default function Calculadora() {
-  const { id } = useParams();
+export default function CalculadoraPage() {
   const navigate = useNavigate();
-  const [projeto, setProjeto] = useState<any | null>(null);
+  const params = useParams();
 
-  const [modoCalculo, setModoCalculo] = useState<'simples' | 'avancado'>('simples');
-  const [areaTotal, setAreaTotal] = useState('');
-  const [comodos, setComodos] = useState([
-    { id: '1', nome: '', largura: '', comprimento: '', altura: '2.70' }
-  ]);
-  const [resultado, setResultado] = useState<any>(null);
-  const [precos, setPrecos] = useState({
-    areiaGrossa: 85.0,
-    areiaFina: 75.0,
-    pedraBrita: 90.0,
-    cimento: 32.5,
-    tijolo: 0.85
+  const [area, setArea] = useState<number | ''>('');
+  const [padrao, setPadrao] = useState<'Econômico' | 'Médio' | 'Alto'>('Médio');
+  const [telhado, setTelhado] = useState<'Cerâmico' | 'Fibrocimento' | 'Isotérmico' | 'Madeira aparente' | 'Nenhum'>('Cerâmico');
+
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomDraft, setRoomDraft] = useState<Partial<Room>>({ name: '', width: 3, length: 3, height: 2.7 });
+
+  const [rows, setRows] = useState<MaterialRow[]>([]);
+  const [resumo, setResumo] = useState<any | null>(null);
+
+  const defaultPrices = {
+    tijolo: 0.8,
+    cimento: 40,
+    areia_m3: 180,
+    brita_m3: 220,
+    argamassa_saco: 30,
+    rejunte_kg: 10,
+    piso_m2: 25,
+    porcelanato_m2: 55,
+    tinta_litro: 60,
+    telha_un: 2.5,
+  } as const;
+
+  const [prices, setPrices] = useState<Record<string, number>>({ ...defaultPrices });
+  const [coefs, setCoefs] = useState<Coefs>({
+    tijolo_un_m2: 27,
+    cimento_assent_sac_m2: 1 / 5,
+    cimento_reboco_sac_m2: 0.2,
+    cimento_estrutura_sac_m2: 1,
+    areia_assent_m3_m2: 0.02,
+    areia_reboco_m3_m2: 0.03,
+    brita_m3_m2_piso: 0.03,
+    pintura_m2_por_litro: 2.5,
+    telhas_un_por_m2: 10,
+    reboco_lados: 2,
   });
-
-  const [coeficientesMateriais, setCoeficientesMateriais] = useState<any | null>(null);
+  const [presets, setPresets] = useState<Array<{ name: string; prices: Record<string, number> }>>([]);
+  const [selectedPresetIndex, setSelectedPresetIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem('user');
-    if (!stored) {
-      navigate('/');
-      return;
+    try {
+      const raw = localStorage.getItem('calc_presets');
+      if (raw) setPresets(JSON.parse(raw));
+    } catch (e) {
+      // ignore
     }
-    const u = JSON.parse(stored);
+  }, []);
 
-    const load = async () => {
-      const { data: projData, error: projErr } = await supabase.from('projetos').select('*').eq('id', id).eq('owner', u.id).single();
-      if (projErr) console.error(projErr);
-      setProjeto(projData || null);
-
-      // load precos
-      const { data: precosData, error: precosErr } = await supabase.from('materiais_precos').select('*');
-      if (!precosErr && precosData) {
-        const obj: any = {};
-        precosData.forEach((row: any) => { obj[row.key] = row.preco; });
-        setPrecos((p) => ({ ...p, ...obj }));
+  useEffect(() => {
+    const projetoId = (params as any)?.projetoId || (params as any)?.id || null;
+    if (!projetoId) return;
+    (async () => {
+      const { data } = await supabase.from('calculadora_presets').select('*').eq('projeto_id', projetoId).order('created_at', { ascending: true });
+      if (data && Array.isArray(data)) {
+        const remotePresets = data.map((r: any) => ({ name: r.name, prices: r.data }));
+        setPresets((prev) => [...prev, ...remotePresets]);
       }
+    })();
+  }, [params]);
 
-      // load coeficientes for projeto type/padrao
-      if (projData) {
-        const { data: coefData, error: coefErr } = await supabase
-          .from('materiais_coeficientes')
-          .select('coeficientes')
-          .eq('tipo', projData.tipo)
-          .eq('padrao', projData.padrao)
-          .single();
-        if (!coefErr && coefData) setCoeficientesMateriais(coefData.coeficientes);
-      }
-    };
-    load();
-  }, [id, navigate]);
+  function savePresetsToStorage(list: any) {
+    localStorage.setItem('calc_presets', JSON.stringify(list));
+  }
 
-  if (!projeto) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-teal-50 to-orange-50 flex items-center justify-center">
-        <div className="text-center">
-          <i className="ri-error-warning-line text-6xl text-gray-400 mb-4"></i>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Projeto não encontrado</h2>
-          <button
-            onClick={() => navigate('/projetos')}
-            className="mt-4 px-6 py-3 bg-teal-500 text-white rounded-lg font-semibold hover:bg-teal-600 transition-colors whitespace-nowrap cursor-pointer"
-          >
-            Voltar para Projetos
+  async function savePreset() {
+    const name = prompt('Nome do preset:');
+    if (!name) return;
+    const next = [...presets, { name, prices }];
+    setPresets(next);
+    savePresetsToStorage(next);
+
+    const projetoId = (params as any)?.projetoId || (params as any)?.id || null;
+    if (!projetoId) return;
+    try {
+      const userResp = await supabase.auth.getUser();
+      const owner = (userResp as any)?.data?.user?.id || null;
+      await supabase.from('calculadora_presets').insert([{ projeto_id: projetoId, owner, name, data: prices }]);
+    } catch (e) {
+      // ignore remote save errors
+    }
+  }
+
+  function applyPreset(idx: number) {
+    const p = presets[idx];
+    if (!p) return;
+    setSelectedPresetIndex(idx);
+    setPrices(p.prices);
+    // compute using the preset prices immediately
+    const input: CalculadoraInput = {
+      rooms: rooms.length ? rooms : undefined,
+      telhadoTipo: telhado,
+      telhadoInclinationFactor: 1.2,
+    } as any;
+    const result = calcularEstimativa(input, p.prices, coefs as any);
+    setRows(result.rows);
+    setResumo(result.resumo as any);
+  }
+
+  function deletePreset(idx: number) {
+    const next = presets.filter((_, i) => i !== idx);
+    setPresets(next);
+    savePresetsToStorage(next);
+  }
+
+  function addRoom() {
+    if (!roomDraft.name || !roomDraft.width || !roomDraft.length) return;
+    const r: Room = { name: String(roomDraft.name), width: Number(roomDraft.width), length: Number(roomDraft.length), height: roomDraft.height };
+    setRooms((s) => [...s, r]);
+    setRoomDraft({ name: '', width: 3, length: 3, height: 2.7 });
+  }
+
+  function removeRoom(idx: number) {
+    setRooms((s) => s.filter((_, i) => i !== idx));
+  }
+
+  function gerar() {
+    const input: CalculadoraInput = {
+      rooms: rooms.length ? rooms : undefined,
+      telhadoTipo: telhado,
+      telhadoInclinationFactor: 1.2,
+    } as any;
+    const result = calcularEstimativa(input, prices, coefs as any);
+    setRows(result.rows);
+    setResumo(result.resumo as any);
+  }
+
+  return (
+    <div className="max-w-5xl mx-auto p-6">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold text-blue-600">Calculadora Rápida de Obra</h1>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate(-1)} className="px-3 py-1 border rounded">Voltar</button>
+          <button onClick={() => window.print()} title="Imprimir" className="px-3 py-1 border rounded">
+            <i className="ri-printer-line text-lg"></i>
           </button>
         </div>
       </div>
-    );
-  }
 
-  const adicionarComodo = () => {
-    setComodos([...comodos, {
-      id: Date.now().toString(),
-      nome: '',
-      largura: '',
-      comprimento: '',
-      altura: '2.70'
-    }]);
-  };
+      <div className="bg-white rounded-lg shadow p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 border rounded-lg">
+              <h3 className="font-semibold mb-2">Ambientes (cômodos)</h3>
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 mb-2">Preencha cada cômodo com: <strong>Nome</strong>, <strong>Largura (m)</strong>, <strong>Comprimento (m)</strong> e <strong>Altura (m)</strong> (padrão 2.70 m).</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col text-sm">
+                    Nome do cômodo
+                    <input placeholder="Ex: Sala" value={roomDraft.name as string} onChange={(e) => setRoomDraft((d) => ({ ...d, name: e.target.value }))} className="mt-1 border rounded p-2" />
+                  </label>
 
-  const removerComodo = (id: string) => {
-    if (comodos.length > 1) {
-      setComodos(comodos.filter(c => c.id !== id));
-    }
-  };
+                  <label className="flex flex-col text-sm">
+                    Largura (m)
+                    <input type="number" placeholder="Ex: 3.50" value={roomDraft.width as any} onChange={(e) => setRoomDraft((d) => ({ ...d, width: Number(e.target.value) }))} className="mt-1 border rounded p-2" />
+                  </label>
 
-  const atualizarComodo = (id: string, campo: string, valor: string) => {
-    setComodos(comodos.map(c => c.id === id ? { ...c, [campo]: valor } : c));
-  };
+                  <label className="flex flex-col text-sm">
+                    Comprimento (m)
+                    <input type="number" placeholder="Ex: 4.00" value={roomDraft.length as any} onChange={(e) => setRoomDraft((d) => ({ ...d, length: Number(e.target.value) }))} className="mt-1 border rounded p-2" />
+                  </label>
 
-  const calcularAreaTotal = () => {
-    if (modoCalculo === 'simples') {
-      return parseFloat(areaTotal) || 0;
-    } else {
-      return comodos.reduce((total, comodo) => {
-        const largura = parseFloat(comodo.largura) || 0;
-        const comprimento = parseFloat(comodo.comprimento) || 0;
-        return total + (largura * comprimento);
-      }, 0);
-    }
-  };
+                  <label className="flex flex-col text-sm">
+                    Altura (m)
+                    <input type="number" placeholder="Ex: 2.70" value={roomDraft.height as any} onChange={(e) => setRoomDraft((d) => ({ ...d, height: Number(e.target.value) }))} className="mt-1 border rounded p-2" />
+                  </label>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={addRoom} className="px-3 py-2 bg-green-600 text-white rounded">Adicionar cômodo</button>
+                  <button onClick={() => setRoomDraft({ name: '', width: 3, length: 3, height: 2.7 })} className="px-3 py-2 border rounded">Limpar</button>
+                </div>
+                <div className="mt-3">
+                  {rooms.length === 0 ? <div className="text-sm text-gray-500">Nenhum cômodo adicionado.</div> : (
+                    <ul className="space-y-2">
+                      {rooms.map((r, i) => (
+                        <li key={i} className="flex items-center justify-between border p-2 rounded">
+                          <div>
+                            <div className="font-medium">{r.name}</div>
+                            <div className="text-xs text-gray-600">{r.width} × {r.length} m • h {r.height ?? 2.7} m</div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => removeRoom(i)} className="px-2 py-1 border rounded text-sm">Remover</button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
 
-  const calcularMateriais = () => {
-    const area = calcularAreaTotal();
-    if (area === 0) {
-      alert('Por favor, informe a área da construção');
-      return;
-    }
+            <div className="p-4 border rounded-lg">
+              <h3 className="font-semibold mb-2">Controles & Presets</h3>
+              <div className="mb-3">
+                <label className="text-sm">Telhado</label>
+                <select value={telhado} onChange={(e) => setTelhado(e.target.value as any)} className="w-full mt-1 border rounded p-2">
+                  <option>Cerâmico</option>
+                  <option>Fibrocimento</option>
+                  <option>Isotérmico</option>
+                  <option>Madeira aparente</option>
+                  <option>Nenhum</option>
+                </select>
+              </div>
 
-    const coef = coeficientesMateriais[projeto.tipo]?.[projeto.padrao] || coeficientesMateriais.casa.medio;
+              <div className="flex gap-2">
+                <button onClick={gerar} className="px-4 py-2 bg-blue-600 text-white rounded">Calcular</button>
+                <button onClick={() => { setRows([]); setResumo(null); }} className="px-4 py-2 border rounded">Limpar resultados</button>
+              </div>
 
-    const materiais = [
-      {
-        nome: 'Areia Grossa',
-        unidade: 'm³',
-        quantidade: area * coef.areiaGrossa,
-        valorUnitario: precos.areiaGrossa,
-        valorTotal: area * coef.areiaGrossa * precos.areiaGrossa
-      },
-      {
-        nome: 'Areia Fina',
-        unidade: 'm³',
-        quantidade: area * coef.areiaFina,
-        valorUnitario: precos.areiaFina,
-        valorTotal: area * coef.areiaFina * precos.areiaFina
-      },
-      {
-        nome: 'Pedra Brita',
-        unidade: 'm³',
-        quantidade: area * coef.pedraBrita,
-        valorUnitario: precos.pedraBrita,
-        valorTotal: area * coef.pedraBrita * precos.pedraBrita
-      },
-      {
-        nome: 'Cimento (Estrutura)',
-        unidade: 'saco 50kg',
-        quantidade: area * coef.cimentoEstrutura,
-        valorUnitario: precos.cimento,
-        valorTotal: area * coef.cimentoEstrutura * precos.cimento
-      },
-      {
-        nome: 'Cimento (Assentamento/Reboco)',
-        unidade: 'saco 50kg',
-        quantidade: area * coef.cimentoAcabamento,
-        valorUnitario: precos.cimento,
-        valorTotal: area * coef.cimentoAcabamento * precos.cimento
-      },
-      {
-        nome: 'Tijolos',
-        unidade: 'unidade',
-        quantidade: area * coef.tijolos,
-        valorUnitario: precos.tijolo,
-        valorTotal: area * coef.tijolos * precos.tijolo
-      }
-    ];
+              <div className="mt-4">
+                <label className="text-xs text-gray-600">Presets:</label>
+                <div className="flex gap-2 mt-1">
+                    <select className="border rounded p-1 text-sm w-full sm:w-auto" onChange={(e) => { const v = e.target.value; if (v === '') { setSelectedPresetIndex(null); return; } applyPreset(Number(v)); }} value={selectedPresetIndex ?? ''}>
+                      <option value="">-- Carregar preset --</option>
+                      {presets.map((p, i) => <option key={i} value={i}>{p.name}</option>)}
+                    </select>
+                    <button onClick={savePreset} className="px-2 py-1 bg-green-600 text-white rounded text-sm w-full sm:w-auto">Salvar preset</button>
+                    <button onClick={() => { setPresets([]); savePresetsToStorage([]); }} className="px-2 py-1 bg-red-600 text-white rounded text-sm w-full sm:w-auto">Limpar presets</button>
+                </div>
+              </div>
+                {selectedPresetIndex !== null && presets[selectedPresetIndex] && (
+                  <div className="mt-3 p-3 bg-gray-50 rounded text-sm">
+                    <div className="font-medium mb-1">Preset: {presets[selectedPresetIndex].name}</div>
+                    <div className="grid grid-cols-1 gap-1">
+                      {Object.entries(presets[selectedPresetIndex].prices).map(([k, v]) => (
+                        <div key={k} className="flex justify-between">
+                          <div className="text-gray-700">{k.replace(/_/g, ' ')}</div>
+                          <div className="font-mono">{Number(v).toFixed(2)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+            </div>
+          </div>
 
-    const totalMateriais = materiais.reduce((sum, m) => sum + m.valorTotal, 0);
-    const custoPorM2 = totalMateriais / area;
-
-    setResultado({
-      area,
-      materiais,
-      totalMateriais,
-      custoPorM2
-    });
-  };
-
-  const adicionarAoOrcamento = () => {
-    alert('Materiais adicionados ao orçamento do projeto com sucesso!');
-    navigate(`/projeto/${id}`);
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-50 to-orange-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => navigate(`/projeto/${id}`)}
-              className="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
-            >
-              <i className="ri-arrow-left-line text-xl"></i>
-            </button>
-            <img 
-              src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png" 
-              alt="Logo"
-              className="w-10 h-10 object-contain"
-            />
-            <div className="flex-1">
-              <h1 className="text-xl font-bold text-gray-800">Calculadora de Materiais</h1>
-              <p className="text-sm text-gray-600">{projeto.nome}</p>
+          <div className="mt-6 bg-white p-4 rounded shadow">
+            <h3 className="font-semibold mb-3">Lista detalhada</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left bg-gray-100">
+                    <th className="p-2">Categoria</th>
+                    <th className="p-2">Material</th>
+                    <th className="p-2">Qtd</th>
+                    <th className="p-2">Unidade</th>
+                    <th className="p-2">Valor unit.</th>
+                    <th className="p-2">Valor total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="p-2 align-top">{r.categoria}</td>
+                      <td className="p-2 align-top">{r.material}</td>
+                      <td className="p-2 align-top">{r.quantidade}</td>
+                      <td className="p-2 align-top">{r.unidade}</td>
+                      <td className="p-2 align-top">{r.valor_unitario ? `R$ ${r.valor_unitario.toFixed(2)}` : '—'}</td>
+                      <td className="p-2 align-top">{r.valor_total ? `R$ ${r.valor_total.toFixed(2)}` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
-      </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Painel de Entrada */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Modo de Cálculo */}
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">Modo de Cálculo</h2>
-              <div className="flex gap-4">
-                <button
-                  onClick={() => setModoCalculo('simples')}
-                  className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all whitespace-nowrap cursor-pointer ${
-                    modoCalculo === 'simples'
-                      ? 'bg-teal-500 text-white shadow-lg'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <i className="ri-home-4-line text-lg mr-2"></i>
-                  Simples
-                </button>
-                <button
-                  onClick={() => setModoCalculo('avancado')}
-                  className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all whitespace-nowrap cursor-pointer ${
-                    modoCalculo === 'avancado'
-                      ? 'bg-teal-500 text-white shadow-lg'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <i className="ri-stack-line text-lg mr-2"></i>
-                  Avançado
-                </button>
-              </div>
-            </div>
-
-            {/* Modo Simples */}
-            {modoCalculo === 'simples' && (
-              <div className="bg-white rounded-2xl shadow-lg p-6">
-                <h3 className="text-lg font-bold text-gray-800 mb-4">Área Total</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Área da Construção (m²)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={areaTotal}
-                      onChange={(e) => setAreaTotal(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                      placeholder="Ex: 150.00"
-                    />
-                  </div>
-                  <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
-                    <div className="flex items-start gap-3">
-                      <i className="ri-information-line text-teal-600 text-xl mt-0.5"></i>
-                      <div className="text-sm text-teal-800">
-                        <p className="font-semibold mb-1">Informação</p>
-                        <p>Tipo: <strong>{projeto.tipo.replace('-', ' ')}</strong></p>
-                        <p>Padrão: <strong className="capitalize">{projeto.padrao}</strong></p>
-                        <p className="text-xs mt-2 opacity-80">Os valores são estimativas médias de mercado baseadas no tipo e padrão da obra.</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Modo Avançado */}
-            {modoCalculo === 'avancado' && (
-              <div className="bg-white rounded-2xl shadow-lg p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-gray-800">Cômodos</h3>
-                  <button
-                    onClick={adicionarComodo}
-                    className="flex items-center gap-2 bg-teal-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-teal-600 transition-colors text-sm whitespace-nowrap cursor-pointer"
-                  >
-                    <i className="ri-add-line text-lg"></i>
-                    Adicionar
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {comodos.map((comodo, index) => (
-                    <div key={comodo.id} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm font-semibold text-gray-700">Cômodo {index + 1}</span>
-                        {comodos.length > 1 && (
-                          <button
-                            onClick={() => removerComodo(comodo.id)}
-                            className="w-8 h-8 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                          >
-                            <i className="ri-delete-bin-line text-lg text-yellow-500"></i>
-                          </button>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-4 gap-3">
-                        <div className="col-span-4">
-                          <input
-                            type="text"
-                            value={comodo.nome}
-                            onChange={(e) => atualizarComodo(comodo.id, 'nome', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                            placeholder="Nome do cômodo"
-                          />
-                        </div>
-                        <div>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={comodo.largura}
-                            onChange={(e) => atualizarComodo(comodo.id, 'largura', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                            placeholder="Largura (m)"
-                          />
-                        </div>
-                        <div>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={comodo.comprimento}
-                            onChange={(e) => atualizarComodo(comodo.id, 'comprimento', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                            placeholder="Comprimento (m)"
-                          />
-                        </div>
-                        <div>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={comodo.altura}
-                            onChange={(e) => atualizarComodo(comodo.id, 'altura', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                            placeholder="Altura (m)"
-                          />
-                        </div>
-                        <div className="col-span-4 text-right text-sm text-gray-600">
-                          Área: <strong className="text-gray-800">
-                            {((parseFloat(comodo.largura) || 0) * (parseFloat(comodo.comprimento) || 0)).toFixed(2)} m²
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-teal-800">Área Total Calculada:</span>
-                      <span className="text-lg font-bold text-teal-800">
-                        {calcularAreaTotal().toFixed(2)} m²
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Tabela de Preços */}
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Tabela de Preços (Editável)</h3>
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Areia Grossa (m³)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={precos.areiaGrossa}
-                      onChange={(e) => setPrecos({...precos, areiaGrossa: parseFloat(e.target.value)})}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Areia Fina (m³)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={precos.areiaFina}
-                      onChange={(e) => setPrecos({...precos, areiaFina: parseFloat(e.target.value)})}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Pedra Brita (m³)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={precos.pedraBrita}
-                      onChange={(e) => setPrecos({...precos, pedraBrita: parseFloat(e.target.value)})}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Cimento (saco 50kg)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={precos.cimento}
-                      onChange={(e) => setPrecos({...precos, cimento: parseFloat(e.target.value)})}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Tijolo (unidade)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={precos.tijolo}
-                      onChange={(e) => setPrecos({...precos, tijolo: parseFloat(e.target.value)})}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={calcularMateriais}
-              className="w-full bg-gradient-to-r from-teal-500 to-teal-600 text-white py-4 rounded-xl font-bold text-lg hover:from-teal-600 hover:to-teal-700 transition-all shadow-lg whitespace-nowrap cursor-pointer"
-            >
-              <i className="ri-calculator-line text-2xl mr-2"></i>
-              Calcular Materiais
-            </button>
+        <div className="p-4 border rounded-lg">
+          <h3 className="font-semibold mb-2">Resumo do Projeto</h3>
+          <div className="text-sm text-gray-700 space-y-2">
+            <div>Piso total: {resumo ? `${resumo.piso_m2} m²` : '—'}</div>
+            <div>Paredes total: {resumo ? `${resumo.paredes_m2} m²` : '—'}</div>
+            <div>Perímetro total: {resumo ? `${resumo.perimetro_m} m` : '—'}</div>
+            <div>Área telhado: {resumo ? `${resumo.area_telhado_m2} m²` : '—'}</div>
+            <div className="font-bold">Custo estimado: {resumo ? `R$ ${resumo.custo_total.toFixed(2)}` : '—'}</div>
           </div>
 
-          {/* Painel de Resultados */}
-          <div className="lg:col-span-1">
-            {resultado ? (
-              <div className="space-y-6 sticky top-4">
-                <div className="bg-white rounded-2xl shadow-lg p-6">
-                  <h3 className="text-lg font-bold text-gray-800 mb-4">Resumo</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between py-2 border-b">
-                      <span className="text-sm text-gray-600">Área Total</span>
-                      <span className="text-sm font-bold text-gray-800">{resultado.area.toFixed(2)} m²</span>
-                    </div>
-                    <div className="flex items-center justify-between py-2 border-b">
-                      <span className="text-sm text-gray-600">Custo por m²</span>
-                      <span className="text-sm font-bold text-teal-600">
-                        R$ {resultado.custoPorM2.toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between py-2">
-                      <span className="text-sm text-gray-600">Total Estimado</span>
-                      <span className="text-xl font-bold text-gray-800">
-                        R$ {resultado.totalMateriais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-2xl shadow-lg p-6">
-                  <h3 className="text-lg font-bold text-gray-800 mb-4">Materiais</h3>
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {resultado.materiais.map((material: any, index: number) => (
-                      <div key={index} className="border-b pb-3">
-                        <div className="flex items-start justify-between mb-1">
-                          <span className="text-sm font-semibold text-gray-800">{material.nome}</span>
-                          <span className="text-sm font-bold text-teal-600">
-                            R$ {material.valorTotal.toFixed(2)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-gray-600">
-                          <span>{material.quantidade.toFixed(2)} {material.unidade}</span>
-                          <span>R$ {material.valorUnitario.toFixed(2)}/{material.unidade}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  onClick={adicionarAoOrcamento}
-                  className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold hover:bg-orange-600 transition-colors shadow-lg whitespace-nowrap cursor-pointer"
-                >
-                  <i className="ri-add-circle-line text-xl mr-2"></i>
-                  Adicionar ao Orçamento
-                </button>
-
-                <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-                  <div className="flex items-start gap-2">
-                    <i className="ri-alert-line text-orange-600 text-lg mt-0.5"></i>
-                    <p className="text-xs text-orange-800">
-                      <strong>Atenção:</strong> Os valores são estimativas médias de mercado. 
-                      Podem variar conforme região, fornecedor e especificações técnicas.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl shadow-lg p-6 text-center sticky top-4">
-                <i className="ri-calculator-line text-6xl text-gray-300 mb-4"></i>
-                <h3 className="text-lg font-bold text-gray-800 mb-2">Aguardando Cálculo</h3>
-                <p className="text-sm text-gray-600">
-                  Preencha as informações e clique em "Calcular Materiais" para ver os resultados
-                </p>
-              </div>
-            )}
+          <div className="mt-4">
+            <h4 className="font-semibold mb-2">Coeficientes (editáveis)</h4>
+            <div className="space-y-2 text-sm">
+              <label className="flex flex-col">
+                Tijolo (un / m² parede)
+                <input type="number" value={coefs.tijolo_un_m2} onChange={(e) => setCoefs((c) => ({ ...c, tijolo_un_m2: Number(e.target.value) }))} className="mt-1 border rounded p-2" />
+              </label>
+              <label className="flex flex-col">
+                Cimento assent. (sac / m² parede)
+                <input type="number" step="0.01" value={coefs.cimento_assent_sac_m2} onChange={(e) => setCoefs((c) => ({ ...c, cimento_assent_sac_m2: Number(e.target.value) }))} className="mt-1 border rounded p-2" />
+              </label>
+              <label className="flex flex-col">
+                Cimento reboco (sac / m² / lado)
+                <input type="number" step="0.01" value={coefs.cimento_reboco_sac_m2} onChange={(e) => setCoefs((c) => ({ ...c, cimento_reboco_sac_m2: Number(e.target.value) }))} className="mt-1 border rounded p-2" />
+              </label>
+              <label className="flex flex-col">
+                Lados de reboco
+                <input type="number" step="1" min="1" value={coefs.reboco_lados} onChange={(e) => setCoefs((c) => ({ ...c, reboco_lados: Number(e.target.value) }))} className="mt-1 border rounded p-2" />
+              </label>
+              <label className="flex flex-col">
+                Brita (m³ / m² piso)
+                <input type="number" step="0.001" value={coefs.brita_m3_m2_piso} onChange={(e) => setCoefs((c) => ({ ...c, brita_m3_m2_piso: Number(e.target.value) }))} className="mt-1 border rounded p-2" />
+              </label>
+            </div>
           </div>
+        </div>
+      </div>
+
+      <div className="mt-6 bg-white rounded shadow p-4">
+        <h2 className="font-semibold mb-3">Lista detalhada</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left bg-gray-100">
+                <th className="p-2">Categoria</th>
+                <th className="p-2">Material</th>
+                <th className="p-2">Qtd</th>
+                <th className="p-2">Unidade</th>
+                <th className="p-2">Valor unit.</th>
+                <th className="p-2">Valor total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="border-t">
+                  <td className="p-2 align-top">{r.categoria}</td>
+                  <td className="p-2 align-top">{r.material}</td>
+                  <td className="p-2 align-top">{r.quantidade}</td>
+                  <td className="p-2 align-top">{r.unidade}</td>
+                  <td className="p-2 align-top">R$ {r.valor_unitario?.toFixed(2) ?? '0.00'}</td>
+                  <td className="p-2 align-top">R$ {r.valor_total?.toFixed(2) ?? '0.00'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

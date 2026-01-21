@@ -18,6 +18,10 @@ const routes: RouteObject[] = [
     element: <Projetos />,
   },
   {
+    path: '/calculadora',
+    element: <Calculadora />,
+  },
+  {
     path: '/projeto/:id',
     element: <ProjetoDetalhes />,
   },

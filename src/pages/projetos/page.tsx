@@ -186,13 +186,23 @@ export default function Projetos() {
               <p className="text-sm text-gray-600">Gestão de Projetos</p>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors whitespace-nowrap cursor-pointer"
-          >
-            <i className="ri-logout-box-line text-lg"></i>
-            Sair
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate('/calculadora')}
+              className="flex items-center justify-center w-10 h-10 text-gray-600 hover:text-gray-800 transition-colors rounded"
+              title="Calculadora"
+            >
+              <i className="ri-calculator-line text-lg"></i>
+            </button>
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors whitespace-nowrap cursor-pointer"
+            >
+              <i className="ri-logout-box-line text-lg"></i>
+              Sair
+            </button>
+          </div>
         </div>
       </header>
 
