@@ -97,7 +97,8 @@ export default function Login() {
           <img 
             src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png" 
             alt="Logo"
-            className="w-32 h-32 mx-auto object-contain"
+            className="w-44 h-44 mx-auto object-contain shadow-xl"
+            style={{ zIndex: 20 }}
           />
         </div>
 

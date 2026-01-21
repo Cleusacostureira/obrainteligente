@@ -179,10 +179,10 @@ export default function Projetos() {
             <img 
               src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png" 
               alt="Logo"
-              className="w-12 h-12 object-contain"
+              className="w-20 h-20 object-contain shadow-lg"
             />
             <div>
-              <h1 className="text-xl font-bold text-blue-700">Obra Inteligente</h1>
+              <h1 className="text-2xl font-bold text-blue-700">Obra Inteligente</h1>
               <p className="text-sm text-gray-600">Gestão de Projetos</p>
             </div>
           </div>
