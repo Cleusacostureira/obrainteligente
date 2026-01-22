@@ -3,8 +3,9 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Html, Stats } from '@react-three/drei';
 import * as THREE from 'three';
 import { Planta, Wall, Opening, PlantaRoom } from '../lib/planta';
+import type { GalleryItem, PlacedObject } from './ThreeGallery/types';
 
-type Props = { planta: Planta; width?: number; height?: number };
+type Props = { planta: Planta; width?: number; height?: number; selectedGalleryItem?: GalleryItem | null; onPlaceObject?: (p: PlacedObject) => void };
 
 function WallMesh({ w }: { w: Wall }) {
   const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
@@ -67,7 +68,7 @@ function Floor({ rooms }: { rooms: PlantaRoom[] }) {
   );
 }
 
-export default function Planta3DInner({ planta, width = 800, height = 600 }: Props) {
+export default function Planta3DInner({ planta, width = 800, height = 600, selectedGalleryItem = null, onPlaceObject }: Props) {
   // sanitize planta input so three.js never receives NaN/undefined
   const { walls, rooms } = useMemo(() => {
     const rawRooms: PlantaRoom[] = Array.isArray(planta?.ambientes) ? planta.ambientes : [];
@@ -120,7 +121,38 @@ export default function Planta3DInner({ planta, width = 800, height = 600 }: Pro
           <group position={[-0.01, 0, 0]}> 
             <Floor rooms={rooms} />
             {walls.map((w) => (
-              <group key={w.id}>
+              <group key={w.id} onClick={(e) => {
+                // allow placing only when an item is selected in the gallery
+                try {
+                  if (!selectedGalleryItem) return;
+                  e.stopPropagation();
+                  // e.point is the clicked point in world coords
+                  const pt: any = (e as any).point || { x: 0, y: 0, z: 0 };
+                  const worldX = Number(pt.x || 0);
+                  const worldY = Number(pt.y || 0);
+                  const worldZ = Number(pt.z || 0);
+                  // convert world coords to 2D planta coords: note we render with z = -y
+                  const px = worldX; const py = -worldZ;
+                  const dx = w.x2 - w.x1; const dy = w.y2 - w.y1; const len = Math.hypot(dx, dy);
+                  const ux = dx / (len || 1); const uy = dy / (len || 1);
+                  // projection of point onto wall start
+                  const rel = ( (px - w.x1) * ux + (py - w.y1) * uy );
+                  const offset = Math.max(0, rel - (selectedGalleryItem.width || 0) / 2);
+                  const placed: PlacedObject = {
+                    id: `obj_${Date.now()}`,
+                    tipo: selectedGalleryItem.category === 'portas' ? 'porta' : (selectedGalleryItem.category === 'janelas' ? 'janela' : 'movel'),
+                    modelo: selectedGalleryItem.id,
+                    paredeId: w.id,
+                    ambienteId: null,
+                    largura: selectedGalleryItem.width,
+                    altura: selectedGalleryItem.height,
+                    posicao: { x: px, y: py, offset }
+                  };
+                  if (typeof onPlaceObject === 'function') onPlaceObject(placed);
+                } catch (err) {
+                  console.warn('place object failed', err);
+                }
+              }}>
                 <WallMesh w={w} />
                 {(w.openings || []).map((o) => <OpeningHole key={o.id} w={w} o={o} />)}
               </group>

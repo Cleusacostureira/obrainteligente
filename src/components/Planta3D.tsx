@@ -1,6 +1,8 @@
 import React, { Suspense, lazy } from 'react';
 
-type Props = { planta: any; width?: number; height?: number };
+import type { GalleryItem, PlacedObject } from './ThreeGallery/types';
+
+type Props = { planta: any; width?: number; height?: number; selectedGalleryItem?: GalleryItem | null; onPlaceObject?: (p: PlacedObject) => void };
 
 const LazyPlanta3D = lazy(() => import('./Planta3DInner'));
 

@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import GallerySidebar from '../../../components/ThreeGallery/GallerySidebar';
+import type { GalleryItem } from '../../../components/ThreeGallery/types';
 import { useParams, useNavigate } from 'react-router-dom';
 import { calculatePlantaMetrics, calcularMateriaisFromPlanta, Planta, PlantaRoom, generateWallsFromRooms } from '../../../lib/planta';
 import { supabase } from '../../../lib/supabase';
@@ -20,6 +22,8 @@ export default function PlantaPage() {
   // editor state (positions in meters)
   const [placedRooms, setPlacedRooms] = useState<any[]>([] as any[]);
   const [placedWalls, setPlacedWalls] = useState<any[]>([] as any[]);
+  const [selectedGalleryItem, setSelectedGalleryItem] = useState<GalleryItem | null>(null);
+  const [placedObjects, setPlacedObjects] = useState<any[]>([] as any[]);
   const [wallMode, setWallMode] = useState<'idle'|'placing'>('idle');
   const wallStartRef = useRef<{x:number,y:number}|null>(null);
   const [selectedWallId, setSelectedWallId] = useState<string| null>(null);
@@ -336,6 +340,7 @@ export default function PlantaPage() {
   const copiedRoomRef = useRef<any | null>(copiedRoom);
   const selectedOpeningRef = useRef<{ wallId: string; openingId: string } | null>(selectedOpening);
   const placedWallsRef = useRef<any[]>(placedWalls);
+  const placedObjectsRef = useRef<any[]>(placedObjects);
   const editingRoomIdRef = useRef<string | null>(editingRoomId);
 
   // keep refs in sync
@@ -344,6 +349,7 @@ export default function PlantaPage() {
   copiedRoomRef.current = copiedRoom;
   selectedOpeningRef.current = selectedOpening;
   placedWallsRef.current = placedWalls;
+  placedObjectsRef.current = placedObjects;
   editingRoomIdRef.current = editingRoomId;
 
   // debug: log when placedRooms or placedWalls change and expose helper
@@ -353,6 +359,7 @@ export default function PlantaPage() {
     try { (window as any).plantaDebug = () => console.log({ placedRooms, placedWalls, placedRoomsRef: placedRoomsRef.current, placedWallsRef: placedWallsRef.current }); } catch (err) { console.warn('plantaDebug attach failed', err); }
   }, [placedRooms]);
   useEffect(() => { console.log('placedWalls changed:', (placedWalls || []).length, placedWalls); }, [placedWalls]);
+  useEffect(() => { console.log('placedObjects changed:', (placedObjects || []).length, placedObjects); }, [placedObjects]);
 
   const shortcutDepsHash = useMemo(() => JSON.stringify({ s: selectedRoomIds, pr: placedRooms, cr: copiedRoom, so: selectedOpening, pw: placedWalls, er: editingRoomId }), [selectedRoomIds, placedRooms, copiedRoom, selectedOpening, placedWalls, editingRoomId]);
 
@@ -361,16 +368,18 @@ export default function PlantaPage() {
     setSaving(true);
     try {
       // sanitize payload to avoid accidentally serializing DOM/React nodes
-      function sanitizePlantaData(raw: { ambientes: any[]; paredes: any[] } | undefined) {
+      function sanitizePlantaData(raw: { ambientes: any[]; paredes: any[]; objects?: any[] } | undefined) {
         const a = (raw?.ambientes || []).map((r:any) => ({ id: r.id, name: r.name, x: Number(r.x||0), y: Number(r.y||0), width: Number(r.width||0), length: Number(r.length||0), height: Number(r.height||0), isClosed: !!r.isClosed, countsAsAlvenaria: !!r.countsAsAlvenaria, hasForro: !!r.hasForro, groupId: r.groupId }));
         const p = (raw?.paredes || []).map((w:any) => ({ id: w.id, x1: Number(w.x1||0), y1: Number(w.y1||0), x2: Number(w.x2||0), y2: Number(w.y2||0), thickness: Number(w.thickness||0.1), height: Number(w.height||2.7), type: w.type || 'interna', ambiente_origem: w.ambiente_origem || null, openings: (w.openings||[]).map((o:any) => ({ id: o.id, type: o.type, width: Number(o.width||0), height: Number(o.height||0), offset: Number(o.offset||0), bottom: Number(o.bottom||0) })) }));
-        return { ambientes: a, paredes: p };
+        const objs = (raw?.objects || []).map((o:any) => ({ id: o.id, tipo: o.tipo, modelo: o.modelo, paredeId: o.paredeId || null, ambienteId: o.ambienteId || null, largura: Number(o.largura||0), altura: Number(o.altura||0), posicao: { x: Number(o.posicao?.x||0), y: Number(o.posicao?.y||0), offset: Number(o.posicao?.offset||0) } }));
+        return { ambientes: a, paredes: p, objetos: objs };
       }
 
       // prefer latest refs to avoid saving stale state when called right after setState
       const currentRooms = overridePayload?.ambientes ?? placedRoomsRef.current ?? placedRooms;
       const currentWalls = overridePayload?.paredes ?? placedWallsRef.current ?? placedWalls;
-      const payload = sanitizePlantaData({ ambientes: currentRooms, paredes: currentWalls });
+      const currentObjects = (overridePayload as any)?.objects ?? placedObjectsRef.current ?? placedObjects;
+      const payload = sanitizePlantaData({ ambientes: currentRooms, paredes: currentWalls, objects: currentObjects });
       // debug: log payload before sending to Supabase
       console.log('savePlanta payload (sanitized):', payload);
       // get current user to set owner
@@ -1075,9 +1084,27 @@ export default function PlantaPage() {
                   >Fechar</button>
                   <div className="w-full h-full" style={{ position: 'relative', zIndex: 1 }}>
                     {/* lazy load Planta3D to keep bundle small */}
-                    <React.Suspense fallback={<div>Carregando visual 3D...</div>}>
-                      <Planta3D planta={{ ambientes: placedRooms.map((r:any)=>({ id: r.id, name: r.name, width: r.width, length: r.length, height: r.height, isClosed: r.isClosed, countsAsAlvenaria: r.countsAsAlvenaria, hasForro: r.hasForro })), paredes: placedWalls }} width={Math.round(window.innerWidth * 0.85)} height={Math.round(window.innerHeight * 0.85)} />
-                    </React.Suspense>
+                            <div style={{ display: 'flex', width: '100%', height: '100%' }}>
+                              <div style={{ flex: 1, position: 'relative' }}>
+                                <React.Suspense fallback={<div>Carregando visual 3D...</div>}>
+                                  <Planta3D
+                                    planta={{ ambientes: placedRooms.map((r:any)=>({ id: r.id, name: r.name, width: r.width, length: r.length, height: r.height, isClosed: r.isClosed, countsAsAlvenaria: r.countsAsAlvenaria, hasForro: r.hasForro })), paredes: placedWalls }}
+                                    width={Math.round(window.innerWidth * 0.7)}
+                                    height={Math.round(window.innerHeight * 0.85)}
+                                    selectedGalleryItem={selectedGalleryItem}
+                                    onPlaceObject={(obj) => {
+                                      // append to placedObjects and auto-save
+                                      setPlacedObjects(prev => [...prev, obj]);
+                                      // schedule an auto-save with objects
+                                      savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current } as any).catch((e) => console.warn('auto-save after place failed', e));
+                                    }}
+                                  />
+                                </React.Suspense>
+                              </div>
+                              <div style={{ width: 320, borderLeft: '1px solid #eee' }}>
+                                <GallerySidebar items={undefined} onSelectItem={(it) => setSelectedGalleryItem(it)} />
+                              </div>
+                            </div>
                   </div>
                 </div>
             </div>
