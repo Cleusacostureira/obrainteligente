@@ -335,13 +335,7 @@ export default function Projetos() {
                     >
                       <i className="ri-delete-bin-line text-lg"></i>
                     </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); navigate(`/projeto/${projeto.id}/planta`); }}
-                      className="w-8 h-8 flex items-center justify-center text-sky-600 hover:text-sky-700 transition-colors cursor-pointer"
-                      title="Planta"
-                    >
-                      <i className="ri-map-pin-2-line text-lg"></i>
-                    </button>
+                    {/* Botão 'Planta' removido do cartão — permanece apenas no cabeçalho */}
                     <div className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
                       projeto.status === 'em-andamento' 
                         ? 'bg-orange-100 text-orange-700'
