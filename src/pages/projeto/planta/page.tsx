@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { calculatePlantaMetrics, calcularMateriaisFromPlanta, Planta, PlantaRoom, generateWallsFromRooms } from '../../../lib/planta';
 import { supabase } from '../../../lib/supabase';
 
@@ -8,7 +8,7 @@ const Planta3D = React.lazy(() => import('../../../components/Planta3D'));
 
 // Simple SVG-based planta editor with drag/snap and shared wall detection
 export default function PlantaPage() {
-  
+  const navigate = useNavigate();
   const params = useParams();
 
   const [ambientes, setAmbientes] = useState<PlantaRoom[]>([]);
@@ -728,7 +728,10 @@ export default function PlantaPage() {
   return (
     <div className="p-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-sky-600">Planta Baixa — Projeto</h1>
+        <div className="flex items-center gap-3">
+          <button onClick={() => { if (params?.id) navigate(`/projeto/${params.id}`); else navigate(-1); }} className="px-3 py-1 bg-gray-100 rounded text-sm">← Voltar</button>
+          <h1 className="text-2xl font-bold text-sky-600">Planta Baixa — Projeto</h1>
+        </div>
         <div className="flex items-center gap-2">
           <button onClick={async () => { setShowSavedModal(true); await fetchSavedPlantas(); }} className="bg-gray-100 px-3 py-1 rounded">Plantas salvas</button>
         </div>
