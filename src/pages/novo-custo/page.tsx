@@ -259,10 +259,27 @@ export default function NovoCusto() {
   const parseNumber = (v: string | number | undefined | null) => {
     if (typeof v === 'number') return v;
     if (!v) return 0;
-    const s = String(v).trim();
-    // remove thousand separators (dots) and convert comma decimals to dot
-    const cleaned = s.replace(/\./g, '').replace(/,/g, '.');
-    const n = parseFloat(cleaned);
+    let s = String(v).trim().replace(/\s+/g, '');
+    const hasDot = s.indexOf('.') !== -1;
+    const hasComma = s.indexOf(',') !== -1;
+    if (hasComma && !hasDot) {
+      // common format: '89,90' -> decimal is comma
+      s = s.replace(',', '.');
+    } else if (!hasComma && hasDot) {
+      // common format: '89.90' -> decimal is dot (keep as-is)
+    } else if (hasComma && hasDot) {
+      // both present: determine which is the decimal separator by last occurrence
+      const lastDot = s.lastIndexOf('.');
+      const lastComma = s.lastIndexOf(',');
+      if (lastComma > lastDot) {
+        // format like '1.234,56' -> remove dots (thousand) and convert comma to dot
+        s = s.replace(/\./g, '').replace(',', '.');
+      } else {
+        // format like '1,234.56' -> remove commas (thousand)
+        s = s.replace(/,/g, '');
+      }
+    }
+    const n = parseFloat(s);
     return isNaN(n) ? 0 : n;
   };
 
@@ -685,7 +702,6 @@ export default function NovoCusto() {
                     type="number"
                     step="0.01"
                     value={formData.quantidade}
-                     value={formData.quantidade}
                       onChange={(e) => {
                         const q = e.target.value;
                         setFormData({...formData, quantidade: q});
@@ -712,7 +728,6 @@ export default function NovoCusto() {
                     type="number"
                     step="0.01"
                     value={formData.valorUnitario}
-                     value={formData.valorUnitario}
                       onChange={(e) => {
                         const v = e.target.value;
                         setLastEdited('unitario');
@@ -731,7 +746,6 @@ export default function NovoCusto() {
                     type="number"
                     step="0.01"
                     value={formData.valorTotal}
-                   value={formData.valorTotal}
                     onChange={(e) => {
                       const v = e.target.value;
                       setLastEdited('total');

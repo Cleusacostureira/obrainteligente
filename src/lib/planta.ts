@@ -1,5 +1,23 @@
 import { Coefs as CalcCoefs } from './calculadora';
 
+// Defensive fallback: some older deployed bundles referenced a global
+// identifier `wallTotalLen` which can cause a ReferenceError if a
+// stale/missing bundle is loaded. Ensure a global exists and also
+// create a global identifier (via indirect eval) so older minified
+// code won't crash with `wallTotalLen is not defined`.
+try {
+  if (typeof (globalThis as any).wallTotalLen === 'undefined') {
+    (globalThis as any).wallTotalLen = 0;
+    try {
+      (0, eval)('wallTotalLen = globalThis.wallTotalLen');
+    } catch (e) {
+      // eval may be restricted in some CSP environments — ignore safely
+    }
+  }
+} catch (e) {
+  // ignore
+}
+
 export type PlantaRoom = {
   id: string;
   name: string;
@@ -60,6 +78,7 @@ export function calculatePlantaMetrics(planta: Planta, coefs?: Partial<CalcCoefs
   let areaPisoTotal = 0;
   let areaPisoAlvenaria = 0;
   let areaForro = 0;
+  let perimetroExternal = 0;
   const warnings: string[] = [];
 
   for (const a of planta.ambientes || []) {
@@ -82,7 +101,6 @@ export function calculatePlantaMetrics(planta: Planta, coefs?: Partial<CalcCoefs
   const openingsArea = { total: 0 };
   for (const w of walls) {
     const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
-    wallTotalLen += len;
     if (w.type === 'externa') wallExternalLen += len;
     const h = w.height || 2.7;
     let wallOpeningsArea = 0;
