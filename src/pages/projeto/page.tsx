@@ -83,7 +83,9 @@ export default function ProjetoDetalhes() {
     body{font-family:Inter,Arial,Helvetica,sans-serif;padding:20px;color:#111}
     .header{display:flex;align-items:center;justify-content:space-between;padding:16px;border-radius:8px;background:linear-gradient(90deg,#0d9488 0%,#fb923c 100%);color:white;margin-bottom:18px}
     .logo{display:flex;align-items:center;gap:12px}
-    .logo svg{width:56px;height:56px}
+    .logo img{width:56px;height:56px;object-fit:contain;border-radius:8px}
+    .logo .fallback{display:none;align-items:center;justify-content:center;width:56px;height:56px;background:#ffffff;border-radius:8px}
+    .hidden{display:none!important}
     h1{margin:0;font-size:20px}
     .meta{font-size:13px}
     .cards{display:flex;gap:12px;margin-top:12px}
@@ -95,22 +97,22 @@ export default function ProjetoDetalhes() {
 </head>
 <body>
   <div class="header">
-    <div class="logo">
-      <!-- inline logo -->
-      <div style={{ width: 56, height: 56 }}>
-        <img src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png" alt="Obras Inteligente" style={{width:56,height:56,objectFit:'contain',borderRadius:8}} onError={(e)=>{ const img = e.target as HTMLImageElement; img.style.display='none'; const fb = img.parentElement?.querySelector('.fallback') as HTMLElement|null; if (fb) fb.classList.remove('hidden'); }} />
-        <div className="fallback hidden w-14 h-14 flex items-center justify-center" aria-hidden>
-          <svg width="48" height="48" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="8" fill="#ffffff" stroke="#e5e7eb" />
-            <text x="50" y="58" fontSize="12" textAnchor="middle" fill="#0ea5a4">LOGO</text>
-          </svg>
+        <div class="logo">
+        <!-- inline logo -->
+        <div style="width:56px;height:56px;display:flex;align-items:center;justify-content:center;">
+          <img src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png" alt="Obras Inteligente" style="width:56px;height:56px;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';var fb=this.parentElement.querySelector('.fallback'); if(fb) fb.classList.remove('hidden');" />
+          <div class="fallback hidden" aria-hidden>
+            <svg width="48" height="48" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+              <rect width="100" height="100" rx="8" fill="#ffffff" stroke="#e5e7eb" />
+              <text x="50" y="58" font-size="12" text-anchor="middle" fill="#0ea5a4">LOGO</text>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <h1>${projeto?.nome ?? ''}</h1>
+          <div class="meta">${projeto.endereco ?? projeto.address ?? ''}</div>
         </div>
       </div>
-      <div>
-        <h1>${projeto?.nome ?? ''}</h1>
-        <div class="meta">${projeto.endereco ?? projeto.address ?? ''}</div>
-      </div>
-    </div>
     <div style="text-align:right;min-width:220px">
       <div style="font-size:13px;opacity:0.95">Orçamento: <strong>R$ ${orcamento.toLocaleString('pt-BR')}</strong></div>
       <div style="font-size:13px;opacity:0.95">Total gasto: <strong>R$ ${gastoTotal.toLocaleString('pt-BR')}</strong></div>
