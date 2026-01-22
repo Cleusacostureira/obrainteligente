@@ -1,4 +1,4 @@
-import { calcularEstimativa, Coefs as CalcCoefs } from './calculadora';
+import { Coefs as CalcCoefs } from './calculadora';
 
 export type PlantaRoom = {
   id: string;
@@ -25,6 +25,7 @@ export type Wall = {
   thickness?: number; // m
   height?: number; // m
   type?: 'interna' | 'externa' | 'geminada';
+  ambiente_origem?: string | null;
   openings?: Opening[];
 };
 
@@ -34,6 +35,8 @@ export type Opening = {
   width: number; // m
   height?: number; // m
   offset: number; // meters from wall start
+  /** distance from floor to bottom of opening (m) */
+  bottom?: number;
 };
 
 export type PlantaMetrics = {
@@ -57,7 +60,6 @@ export function calculatePlantaMetrics(planta: Planta, coefs?: Partial<CalcCoefs
   let areaPisoTotal = 0;
   let areaPisoAlvenaria = 0;
   let areaForro = 0;
-  let perimetroExternal = 0;
   const warnings: string[] = [];
 
   for (const a of planta.ambientes || []) {
@@ -69,28 +71,34 @@ export function calculatePlantaMetrics(planta: Planta, coefs?: Partial<CalcCoefs
     if (a.isClosed === false) perimetroExternal += perim;
   }
 
-  // If explicit walls are provided, compute wall length and openings
-  let wallTotalLen = 0;
+  // Build walls: prefer explicit `planta.paredes`, otherwise generate from ambientes
+  const walls: Wall[] = (planta.paredes && planta.paredes.length > 0)
+    ? planta.paredes
+    : generateWallsFromRooms(planta.ambientes || []);
+
+  // compute wall totals and openings area per wall (net area = length*height - openings)
   let wallExternalLen = 0;
-  let openingsArea = 0;
-  if (planta.paredes && planta.paredes.length > 0) {
-    for (const w of planta.paredes) {
-      const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
-      wallTotalLen += len;
-      if (w.type === 'externa') wallExternalLen += len;
-      const h = w.height || 2.7;
-      if (w.openings) {
-        for (const o of w.openings) {
-          const oh = o.height || (o.type === 'porta' ? 2.1 : 1.2);
-          openingsArea += o.width * oh;
-        }
+  let netWallArea = 0;
+  const openingsArea = { total: 0 };
+  for (const w of walls) {
+    const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+    wallTotalLen += len;
+    if (w.type === 'externa') wallExternalLen += len;
+    const h = w.height || 2.7;
+    let wallOpeningsArea = 0;
+    if (w.openings) {
+      for (const o of w.openings) {
+        const oh = o.height || (o.type === 'porta' ? 2.1 : 1.2);
+        const a = (o.width || 0) * oh;
+        wallOpeningsArea += a;
+        openingsArea.total += a;
       }
     }
+    const wallArea = Math.max(0, len * h - wallOpeningsArea);
+    netWallArea += wallArea;
   }
 
-  const areaParede = planta.paredes && planta.paredes.length > 0
-    ? Number((Math.max(0, wallTotalLen * (planta.paredes[0].height || 2.7) - openingsArea)).toFixed(3))
-    : Number((areaPisoAlvenaria * cfg.fator_parede).toFixed(3));
+  const areaParede = Number(netWallArea.toFixed(3));
   const areaTelhado = Number((areaPisoTotal * cfg.fator_inclinacao).toFixed(2));
 
   // Basic validations
@@ -99,7 +107,16 @@ export function calculatePlantaMetrics(planta: Planta, coefs?: Partial<CalcCoefs
   }
   if (areaParede > 0 && areaPisoTotal > 0) {
     const ratio = areaParede / areaPisoTotal;
-    if (ratio < 2.5 || ratio > 3.5) warnings.push('Área de parede fora da faixa esperada (verifique fator_parede e flags).');
+    if (Math.abs(ratio - cfg.fator_parede) / cfg.fator_parede > 0.15) warnings.push('Área de parede real difere mais de 15% do valor estimado pelo fator (alerta).');
+  }
+
+  // Additional validations
+  for (const w of walls) {
+    if (w.openings) {
+      for (const o of w.openings) {
+        if (o.type === 'janela' && w.type !== 'externa') warnings.push('Janela adicionada em parede não externa.');
+      }
+    }
   }
 
   return {
@@ -108,25 +125,73 @@ export function calculatePlantaMetrics(planta: Planta, coefs?: Partial<CalcCoefs
     area_parede_total: areaParede,
     area_forro: Number(areaForro.toFixed(3)),
     area_telhado: areaTelhado,
-    perimetro_externo: planta.paredes && planta.paredes.length > 0 ? Number(wallExternalLen.toFixed(3)) : Number(perimetroExternal.toFixed(3)),
+    perimetro_externo: Number(wallExternalLen.toFixed(3)),
     warnings,
   };
 }
 
-export function calcularMateriaisFromPlanta(planta: Planta, precos?: Record<string, number>, coefs?: Partial<CalcCoefs>) {
-  // The existing calcularEstimativa expects rooms with flags; map PlantaRoom -> Room shape
-  const rooms = (planta.ambientes || []).map((a) => ({
-    name: a.name,
-    width: a.width,
-    length: a.length,
-    height: a.height,
-    isClosed: a.isClosed,
-    countsAsAlvenaria: a.countsAsAlvenaria,
-    hasForro: a.hasForro,
-  } as any));
+// Generate walls (segments) from closed rooms and merge overlapping segments
+export function generateWallsFromRooms(rooms: PlantaRoom[]): Wall[] {
+  type Seg = { x1:number,y1:number,x2:number,y2:number, roomId:string };
+  const segs: Seg[] = [];
+  for (const r of rooms) {
+    if (r.isClosed === false) continue;
+    // if UI provides position (x,y) in room object, use it; otherwise assume origin
+    const x = (r as any).x || 0;
+    const y = (r as any).y || 0;
+    const w = r.width; const h = r.length;
+    const corners = [ [x,y], [x+w,y], [x+w,y+h], [x,y+h] ];
+    for (let i=0;i<4;i++){
+      const a = corners[i]; const b = corners[(i+1)%4];
+      segs.push({ x1: +a[0], y1: +a[1], x2: +b[0], y2: +b[1], roomId: r.id });
+    }
+  }
+  // normalize keys for horizontal/vertical
+  const map = new Map<string, { seg: Seg, count:number, roomIds:Set<string> }>();
+  for (const s of segs) {
+    const key = Math.abs(s.x1 - s.x2) < 1e-6
+      ? `v:${s.x1.toFixed(3)}:${Math.min(s.y1,s.y2).toFixed(3)}-${Math.max(s.y1,s.y2).toFixed(3)}`
+      : `h:${s.y1.toFixed(3)}:${Math.min(s.x1,s.x2).toFixed(3)}-${Math.max(s.x1,s.x2).toFixed(3)}`;
+    const prev = map.get(key);
+    if (prev) { prev.count += 1; prev.roomIds.add(s.roomId); }
+    else map.set(key, { seg: s, count: 1, roomIds: new Set([s.roomId]) });
+  }
+  const walls: Wall[] = [];
+  for (const [k, v] of map.entries()) {
+    const s = v.seg;
+    const type = v.count === 1 ? 'externa' : (v.count > 1 ? 'geminada' : 'interna');
+    walls.push({ id: `w_${k}`, x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, thickness: 0.10, height: 2.7, type: type as any, ambiente_origem: Array.from(v.roomIds)[0], openings: [] });
+  }
+  return walls;
+}
 
-  // Pass rooms and also override coefs (fator_parede is used in planta metrics; calculadora uses fator_parede too)
-  const input: any = { rooms, telhadoInclinationFactor: coefs?.fator_inclinacao };
-  // @ts-ignore
-  return calcularEstimativa(input, precos, coefs as any);
+export function calcularMateriaisFromPlanta(planta: Planta, precos?: Record<string, number>, coefs?: Partial<CalcCoefs>) {
+  const cfg = { coef_tijolo: 50, reboco_lados: 2, pintura_rendimento: 10, ...coefs } as any;
+  const metrics = calculatePlantaMetrics(planta, coefs);
+  const wallArea = metrics.area_parede_total; // m2 (liquid)
+  const externalPerimeter = metrics.perimetro_externo; // m
+  const telhadoArea = metrics.area_telhado;
+
+  const rows: any[] = [];
+
+  // Tijolo
+  const tijoloQty = Number((wallArea * (cfg.coef_tijolo || 50)).toFixed(2));
+  rows.push({ categoria: 'Alvenaria', material: 'Tijolo', quantidade: tijoloQty, unidade: 'un', valor_total: precos?.tijolo ? Number((tijoloQty * precos.tijolo).toFixed(2)) : undefined });
+
+  // Reboco (area * lados)
+  const rebocoArea = Number((wallArea * (cfg.reboco_lados || 2)).toFixed(3));
+  rows.push({ categoria: 'Acabamento', material: 'Reboco (m²)', quantidade: rebocoArea, unidade: 'm²', valor_total: precos?.reboco ? Number((rebocoArea * precos.reboco).toFixed(2)) : undefined });
+
+  // Pintura (litros) = area_reboco / rendimento
+  const pinturaLitros = Number((rebocoArea / (cfg.pintura_rendimento || 10)).toFixed(3));
+  rows.push({ categoria: 'Acabamento', material: 'Pintura (L)', quantidade: pinturaLitros, unidade: 'L', valor_total: precos?.tinta ? Number((pinturaLitros * precos.tinta).toFixed(2)) : undefined });
+
+  // Calhas / rufos / pingadeiras — linear by external perimeter
+  const calhaQty = Number(externalPerimeter.toFixed(3));
+  rows.push({ categoria: 'Telhado', material: 'Calha / Rufos (m)', quantidade: calhaQty, unidade: 'm', valor_total: precos?.calha ? Number((calhaQty * precos.calha).toFixed(2)) : undefined });
+
+  // Telhado: basic area output
+  rows.push({ categoria: 'Telhado', material: 'Área telhado (m²)', quantidade: Number(telhadoArea.toFixed(2)), unidade: 'm²', valor_total: precos?.telha ? Number((telhadoArea * precos.telha).toFixed(2)) : undefined });
+
+  return { metrics, rows };
 }

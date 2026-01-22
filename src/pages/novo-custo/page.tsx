@@ -537,11 +537,20 @@ export default function NovoCusto() {
             >
               <i className="ri-arrow-left-line text-xl"></i>
             </button>
-            <img 
-              src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png" 
-              alt="Logo"
-              className="w-10 h-10 object-contain"
-            />
+            <div className="w-10 h-10 flex items-center justify-center">
+              <img
+                src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png"
+                alt="Logo"
+                className="w-10 h-10 object-contain"
+                onError={(e) => { const img = e.target as HTMLImageElement; img.style.display='none'; const fb = img.parentElement?.querySelector('.fallback') as HTMLElement|null; if (fb) fb.classList.remove('hidden'); }}
+              />
+              <div className="fallback hidden w-10 h-10 flex items-center justify-center" aria-hidden>
+                <svg width="36" height="36" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="100" height="100" rx="8" fill="#ffffff" stroke="#e5e7eb" />
+                  <text x="50" y="58" fontSize="10" textAnchor="middle" fill="#0369a1">LOGO</text>
+                </svg>
+              </div>
+            </div>
             <div className="flex-1">
               <h1 className="text-xl font-bold text-gray-800">Novo Lançamento de Custo</h1>
               <p className="text-sm text-gray-600">{projeto.nome}</p>

@@ -176,24 +176,94 @@ export default function Projetos() {
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <img 
-              src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png" 
-              alt="Logo"
-              className="w-20 h-20 object-contain shadow-lg"
-            />
+            <div style={{ width: 80, height: 80 }} className="flex items-center justify-center">
+              <img
+                src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png"
+                alt="Logo"
+                className="w-20 h-20 object-contain shadow-lg"
+                onError={(e) => {
+                  const img = e.target as HTMLImageElement;
+                  img.style.display = 'none';
+                  const fb = img.parentElement?.querySelector('.fallback') as HTMLElement | null;
+                  if (fb) fb.classList.remove('hidden');
+                }}
+              />
+              <div className="fallback hidden w-20 h-20 flex items-center justify-center bg-white rounded shadow" aria-hidden>
+                <svg width="48" height="48" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="100" height="100" rx="8" fill="#ffffff" stroke="#e5e7eb" />
+                  <text x="50" y="58" fontSize="12" textAnchor="middle" fill="#0ea5a4">LOGO</text>
+                </svg>
+              </div>
+            </div>
             <div>
               <h1 className="text-2xl font-bold text-blue-700">Obra Inteligente</h1>
               <p className="text-sm text-gray-600">Gestão de Projetos</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/calculadora')}
-              className="flex items-center justify-center w-10 h-10 text-gray-600 hover:text-gray-800 transition-colors rounded"
-              title="Calculadora"
-            >
-              <i className="ri-calculator-line text-lg"></i>
-            </button>
+            {/* New image buttons: Contrato (placeholder), Planta, Calculadora */}
+            <div className="flex flex-col items-center">
+              <button
+                onClick={() => alert('Funcionalidade Contrato: em breve')}
+                className="flex items-center justify-center w-12 h-12 bg-white rounded p-1 shadow hover:brightness-95"
+                title="Contrato"
+              >
+                <div className="w-full h-full flex items-center justify-center">
+                  <img src="/assets/icon-contrato.svg" alt="Contrato" className="w-full h-full object-contain" onError={(e) => { const img = e.target as HTMLImageElement; img.style.display='none'; const fb = img.parentElement?.querySelector('.fallback') as HTMLElement|null; if (fb) fb.classList.remove('hidden'); }} />
+                  <div className="fallback hidden w-full h-full flex items-center justify-center" aria-hidden>
+                    <svg width="28" height="28" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                      <rect width="100" height="100" rx="8" fill="#ffffff" stroke="#e5e7eb" />
+                      <text x="50" y="58" fontSize="10" textAnchor="middle" fill="#0369a1">C</text>
+                    </svg>
+                  </div>
+                </div>
+              </button>
+              <div className="text-xs text-blue-600 mt-1">Contrato</div>
+            </div>
+
+            <div className="flex flex-col items-center">
+              <button
+                onClick={() => {
+                  if (projetos && projetos.length > 0) {
+                    navigate(`/projeto/${projetos[0].id}/planta`);
+                  } else {
+                    setShowModal(true);
+                  }
+                }}
+                className="flex items-center justify-center w-12 h-12 bg-white rounded p-1 shadow hover:brightness-95"
+                title="Planta"
+              >
+                <div className="w-full h-full flex items-center justify-center">
+                  <img src="/assets/icon-planta.svg" alt="Planta" className="w-full h-full object-contain" onError={(e) => { const img = e.target as HTMLImageElement; img.style.display='none'; const fb = img.parentElement?.querySelector('.fallback') as HTMLElement|null; if (fb) fb.classList.remove('hidden'); }} />
+                  <div className="fallback hidden w-full h-full flex items-center justify-center" aria-hidden>
+                    <svg width="28" height="28" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                      <rect width="100" height="100" rx="8" fill="#ffffff" stroke="#e5e7eb" />
+                      <text x="50" y="58" fontSize="10" textAnchor="middle" fill="#0369a1">P</text>
+                    </svg>
+                  </div>
+                </div>
+              </button>
+              <div className="text-xs text-blue-600 mt-1">Planta</div>
+            </div>
+
+            <div className="flex flex-col items-center">
+              <button
+                onClick={() => navigate('/calculadora')}
+                className="flex items-center justify-center w-12 h-12 bg-white rounded p-1 shadow hover:brightness-95"
+                title="Calculadora"
+              >
+                <div className="w-full h-full flex items-center justify-center">
+                  <img src="/assets/icon-calculadora.svg" alt="Calculadora" className="w-full h-full object-contain" onError={(e) => { const img = e.target as HTMLImageElement; img.style.display='none'; const fb = img.parentElement?.querySelector('.fallback') as HTMLElement|null; if (fb) fb.classList.remove('hidden'); }} />
+                  <div className="fallback hidden w-full h-full flex items-center justify-center" aria-hidden>
+                    <svg width="28" height="28" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                      <rect width="100" height="100" rx="8" fill="#ffffff" stroke="#e5e7eb" />
+                      <text x="50" y="58" fontSize="10" textAnchor="middle" fill="#0369a1">=</text>
+                    </svg>
+                  </div>
+                </div>
+              </button>
+              <div className="text-xs text-blue-600 mt-1">Calculadora</div>
+            </div>
 
             <button
               onClick={handleLogout}
@@ -264,6 +334,13 @@ export default function Projetos() {
                       title="Excluir projeto"
                     >
                       <i className="ri-delete-bin-line text-lg"></i>
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigate(`/projeto/${projeto.id}/planta`); }}
+                      className="w-8 h-8 flex items-center justify-center text-sky-600 hover:text-sky-700 transition-colors cursor-pointer"
+                      title="Planta"
+                    >
+                      <i className="ri-map-pin-2-line text-lg"></i>
                     </button>
                     <div className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
                       projeto.status === 'em-andamento' 

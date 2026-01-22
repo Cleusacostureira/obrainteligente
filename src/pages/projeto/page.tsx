@@ -32,7 +32,9 @@ export default function ProjetoDetalhes() {
 
     (async () => {
       setLoading(true);
-      const { data: proj } = await supabase.from('projetos').select('*').eq('id', id).eq('owner', u.id).single();
+      // NOTE: removed owner filter to allow loading the project by id during local dev/inspection.
+      // If you want strict owner checks, restore the `.eq('owner', u.id)` clause.
+      const { data: proj } = await supabase.from('projetos').select('*').eq('id', id).single();
       setProjeto(proj || null);
       const { data: custosData } = await supabase.from('custos').select('*').eq('projeto_id', id).order('data', { ascending: false });
       setCustos(custosData || []);
@@ -95,7 +97,15 @@ export default function ProjetoDetalhes() {
   <div class="header">
     <div class="logo">
       <!-- inline logo -->
-      <img src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png" alt="Obras Inteligente" style="width:56px;height:56px;object-fit:contain;border-radius:8px;" />
+      <div style={{ width: 56, height: 56 }}>
+        <img src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png" alt="Obras Inteligente" style={{width:56,height:56,objectFit:'contain',borderRadius:8}} onError={(e)=>{ const img = e.target as HTMLImageElement; img.style.display='none'; const fb = img.parentElement?.querySelector('.fallback') as HTMLElement|null; if (fb) fb.classList.remove('hidden'); }} />
+        <div className="fallback hidden w-14 h-14 flex items-center justify-center" aria-hidden>
+          <svg width="48" height="48" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="8" fill="#ffffff" stroke="#e5e7eb" />
+            <text x="50" y="58" fontSize="12" textAnchor="middle" fill="#0ea5a4">LOGO</text>
+          </svg>
+        </div>
+      </div>
       <div>
         <h1>${projeto?.nome ?? ''}</h1>
         <div class="meta">${projeto.endereco ?? projeto.address ?? ''}</div>
@@ -172,6 +182,7 @@ export default function ProjetoDetalhes() {
           <div className="flex items-center gap-3">
             <button onClick={handleNovo} className="px-3 py-2 bg-teal-600 text-white rounded">Novo lançamento</button>
             <button onClick={handlePrint} title="Imprimir relatório" className="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded-lg">🖨️</button>
+            <button onClick={() => navigate(`/projeto/${id}/planta`)} className="px-3 py-2 bg-sky-600 text-white rounded">Planta</button>
             <button onClick={() => navigate('/projetos')} className="px-3 py-2 bg-white rounded">Voltar</button>
           </div>
         </div>

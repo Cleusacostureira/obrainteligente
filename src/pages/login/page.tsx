@@ -93,14 +93,28 @@ export default function Login() {
     <div className="min-h-screen bg-gradient-to-br from-teal-50 to-orange-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <img 
-            src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png" 
-            alt="Logo"
-            className="w-44 h-44 mx-auto object-contain shadow-xl"
-            style={{ zIndex: 20 }}
-          />
-        </div>
+          <div className="text-center mb-8">
+            <div className="mx-auto" style={{ width: 176, height: 176 }}>
+              <img
+                src="https://static.readdy.ai/image/32e34e04a919b9271ef3ff4f79b7fd86/cbe84a417d47b8c1155c0e22c6b2cec6.png"
+                alt="Logo"
+                className="w-44 h-44 mx-auto object-contain shadow-xl"
+                style={{ zIndex: 20 }}
+                onError={(e) => {
+                  const img = e.target as HTMLImageElement;
+                  img.style.display = 'none';
+                  const fb = img.parentElement?.querySelector('.fallback') as HTMLElement | null;
+                  if (fb) fb.classList.remove('hidden');
+                }}
+              />
+              <div className="fallback hidden w-44 h-44 mx-auto flex items-center justify-center bg-white rounded shadow" aria-hidden>
+                <svg width="72" height="72" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="100" height="100" rx="12" fill="#f8fafc" stroke="#e5e7eb" />
+                  <text x="50" y="58" fontSize="14" textAnchor="middle" fill="#0ea5a4">LOGO</text>
+                </svg>
+              </div>
+            </div>
+          </div>
 
         {/* Card de Login/Registro */}
         <div className="bg-white rounded-2xl shadow-xl p-8">
