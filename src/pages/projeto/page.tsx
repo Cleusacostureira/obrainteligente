@@ -22,6 +22,7 @@ export default function ProjetoDetalhes() {
 
   const [projeto, setProjeto] = useState<any | null>(null);
   const [custos, setCustos] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -53,6 +54,17 @@ export default function ProjetoDetalhes() {
       return s + unit * qtd;
     }, 0);
   }, [custos]);
+
+  const filteredCustos = useMemo(() => {
+    const q = String(searchQuery || '').trim().toLowerCase();
+    if (!q) return custos;
+    return custos.filter(c => {
+      const descricao = String(c.descricao || c.produto || '').toLowerCase();
+      const categoria = String(c.categoria || '').toLowerCase();
+      const codigo = String(c.codigo || c.sku || '').toLowerCase();
+      return descricao.includes(q) || categoria.includes(q) || codigo.includes(q);
+    });
+  }, [custos, searchQuery]);
 
   const orcamento = toNumber(projeto?.orcamento ?? projeto?.orcamento_total ?? 0);
   // total gasto should be the sum of all lancamentos (custos)
@@ -263,6 +275,22 @@ export default function ProjetoDetalhes() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div className="p-4 border-b">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Pesquisar produto, descrição ou categoria..."
+                  className="px-3 py-2 border rounded-lg text-sm w-72 focus:outline-none"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="text-sm text-gray-500 hover:underline">Limpar</button>
+                )}
+              </div>
+              <div className="text-sm text-gray-600">Resultados: <strong>{filteredCustos.length}</strong></div>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
@@ -277,12 +305,12 @@ export default function ProjetoDetalhes() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {custos.length === 0 && (
+                {filteredCustos.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-6 py-6 text-center text-sm text-gray-500">Nenhum lançamento ainda.</td>
                   </tr>
                 )}
-                {custos.map(c => (
+                {filteredCustos.map(c => (
                   <tr key={c.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 text-sm text-gray-800">{formatLocalDate(c.data)}</td>
                     <td className="px-6 py-4"><span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-700 capitalize whitespace-nowrap">{(c.categoria||'').replace('-', ' ')}</span></td>
@@ -292,8 +320,26 @@ export default function ProjetoDetalhes() {
                     <td className="px-6 py-4 text-sm text-right">R$ {toNumber(c.valor_total ?? c.valorTotal).toLocaleString('pt-BR')}</td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center gap-2 justify-center">
-                        <button onClick={() => handleEdit(c.id)} className="text-teal-600 hover:underline">Editar</button>
-                        <button onClick={() => handleDelete(c.id)} className="text-red-600 hover:underline">Excluir</button>
+                        <button
+                          onClick={() => handleEdit(c.id)}
+                          aria-label="Editar lançamento"
+                          title="Editar"
+                          className="p-1 rounded hover:bg-gray-100 text-teal-600"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+                            <path d="M17.414 2.586a2 2 0 010 2.828l-9.9 9.9a1 1 0 01-.464.263l-4 1a1 1 0 01-1.213-1.213l1-4a1 1 0 01.263-.464l9.9-9.9a2 2 0 012.828 0zM15.121 4.05l.829.828-1.414 1.414-.829-.829L15.12 4.05zM13.95 5.222l-.829-.828L4.05 13.47l.829.829L13.95 5.222z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(c.id)}
+                          aria-label="Excluir lançamento"
+                          title="Excluir"
+                          className="p-1 rounded hover:bg-gray-100 text-red-600"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+                            <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H3a1 1 0 100 2h14a1 1 0 100-2h-2V3a1 1 0 00-1-1H6zm2 6a1 1 0 10-2 0v7a1 1 0 102 0V8zm6 0a1 1 0 10-2 0v7a1 1 0 102 0V8z" clipRule="evenodd" />
+                          </svg>
+                        </button>
                       </div>
                     </td>
                   </tr>

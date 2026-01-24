@@ -1,0 +1,130 @@
+{
+  "doors": [
+    {
+      "id": "door_wood_01",
+      "type": "door",
+      "category": "internal",
+      "name": "Porta de Madeira Lisa",
+      "preview": "/assets/gallery/doors/door_wood_01.jpg",
+      "model3d": "/assets/gallery/doors/door_wood_01.glb",
+      "material": "wood",
+      "widths": [0.60, 0.70, 0.80, 0.90],
+      "height": 2.10,
+      "wallOnly": true
+    },
+    {
+      "id": "door_metal_01",
+      "type": "door",
+      "category": "external",
+      "name": "Porta Metálica",
+      "preview": "/assets/gallery/doors/door_metal_01.jpg",
+      "model3d": "/assets/gallery/doors/door_metal_01.glb",
+      "material": "metal",
+      "widths": [0.80, 0.90],
+      "height": 2.10,
+      "wallOnly": true
+    },
+    {
+      "id": "door_slide_01",
+      "type": "door",
+      "category": "internal",
+      "name": "Porta de Correr",
+      "preview": "/assets/gallery/doors/door_slide_01.jpg",
+      "model3d": "/assets/gallery/doors/door_slide_01.glb",
+      "material": "wood",
+      "widths": [1.20, 1.50],
+      "height": 2.10,
+      "wallOnly": true
+    }
+  ],
+
+  "windows": [
+    {
+      "id": "window_slide_01",
+      "type": "window",
+      "name": "Janela de Correr",
+      "preview": "/assets/gallery/windows/window_slide_01.jpg",
+      "model3d": "/assets/gallery/windows/window_slide_01.glb",
+      "material": "aluminum",
+      "widths": [1.00, 1.20, 1.50],
+      "height": 1.20,
+      "sillHeight": 1.00,
+      "externalWallOnly": true
+    },
+    {
+      "id": "window_basculant_01",
+      "type": "window",
+      "name": "Janela Basculante",
+      "preview": "/assets/gallery/windows/window_basculant_01.jpg",
+      "model3d": "/assets/gallery/windows/window_basculant_01.glb",
+      "material": "aluminum",
+      "widths": [0.60, 0.80],
+      "height": 0.60,
+      "sillHeight": 1.40,
+      "externalWallOnly": true
+    }
+  ],
+
+  "furniture": [
+    {
+      "id": "bed_double_01",
+      "type": "furniture",
+      "category": "bedroom",
+      "name": "Cama de Casal",
+      "preview": "/assets/gallery/furniture/bed_double_01.jpg",
+      "model3d": "/assets/gallery/furniture/bed_double_01.glb",
+      "width": 1.40,
+      "depth": 1.90,
+      "height": 0.55,
+      "floorOnly": true
+    },
+    {
+      "id": "bed_single_01",
+      "type": "furniture",
+      "category": "bedroom",
+      "name": "Cama de Solteiro",
+      "preview": "/assets/gallery/furniture/bed_single_01.jpg",
+      "model3d": "/assets/gallery/furniture/bed_single_01.glb",
+      "width": 0.90,
+      "depth": 1.90,
+      "height": 0.55,
+      "floorOnly": true
+    },
+    {
+      "id": "sofa_01",
+      "type": "furniture",
+      "category": "living",
+      "name": "Sofá 3 Lugares",
+      "preview": "/assets/gallery/furniture/sofa_01.jpg",
+      "model3d": "/assets/gallery/furniture/sofa_01.glb",
+      "width": 2.00,
+      "depth": 0.85,
+      "height": 0.90,
+      "floorOnly": true
+    },
+    {
+      "id": "kitchen_sink_01",
+      "type": "furniture",
+      "category": "kitchen",
+      "name": "Pia de Cozinha",
+      "preview": "/assets/gallery/furniture/kitchen_sink_01.jpg",
+      "model3d": "/assets/gallery/furniture/kitchen_sink_01.glb",
+      "width": 1.20,
+      "depth": 0.60,
+      "height": 0.90,
+      "floorOnly": true
+    },
+    {
+      "id": "toilet_01",
+      "type": "furniture",
+      "category": "bathroom",
+      "name": "Vaso Sanitário",
+      "preview": "/assets/gallery/furniture/toilet_01.jpg",
+      "model3d": "/assets/gallery/furniture/toilet_01.glb",
+      "width": 0.40,
+      "depth": 0.70,
+      "height": 0.80,
+      "floorOnly": true
+    }
+  ]
+}

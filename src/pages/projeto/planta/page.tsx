@@ -25,6 +25,7 @@ export default function PlantaPage() {
   const [selectedGalleryItem, setSelectedGalleryItem] = useState<GalleryItem | null>(null);
   const [placedObjects, setPlacedObjects] = useState<any[]>([] as any[]);
   const [wallMode, setWallMode] = useState<'idle'|'placing'>('idle');
+  const [cutWallMode, setCutWallMode] = useState(false);
   const wallStartRef = useRef<{x:number,y:number}|null>(null);
   const [selectedWallId, setSelectedWallId] = useState<string| null>(null);
   const openingDragRef = useRef<{ wallId: string; openingId: string; pointerId?: number } | null>(null);
@@ -32,6 +33,10 @@ export default function PlantaPage() {
   const [pixelsPerMeter, setPixelsPerMeter] = useState(50); // scale for the editor (px per meter)
   const [compactSidebar, setCompactSidebar] = useState(false);
   const [editorFullscreen, setEditorFullscreen] = useState(false);
+  const [showGallery, setShowGallery] = useState(true);
+  const [showNewRoomForm, setShowNewRoomForm] = useState(false);
+  const [minimizedNewRoom, setMinimizedNewRoom] = useState(false);
+  const [newRoomForm, setNewRoomForm] = useState({ name: '', width: 4, length: 3 });
   const gridStep = 0.5; // meters for snapping
 
   useEffect(() => {
@@ -40,10 +45,10 @@ export default function PlantaPage() {
       const seeded = ambientes.map((a, i) => ({ ...a, x: 1 + i *  (a.width + 0.5), y: 1 + i *  (a.length + 0.5) }));
       setPlacedRooms(seeded);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ambientes]);
+  }, [ambientes, placedRooms.length]);
 
   // regenerate walls automatically from placedRooms (rooms supply x/y positions)
+  // Depends on `placedRooms` and `placedWalls` because we merge openings from existing walls.
   useEffect(() => {
     try {
       const generated = generateWallsFromRooms(placedRooms.map(r => ({ ...r })) as PlantaRoom[]);
@@ -77,7 +82,7 @@ export default function PlantaPage() {
     } catch (e) {
       console.warn('Could not generate walls from rooms', e);
     }
-  }, [placedRooms]);
+  }, [placedRooms, placedWalls, selectedWallId]);
 
   function addAmbiente() {
     if (!form.name || !form.width || !form.length) return;
@@ -101,8 +106,9 @@ export default function PlantaPage() {
     setPlacedRooms((s) => s.filter((x) => x.id !== id));
   }
 
-  // pointer drag state (move or resize)
-  const dragState = useRef<{ id?: string; offsetX?: number; offsetY?: number; lastX?: number; lastY?: number; lastW?: number; lastH?: number; mode?: 'move'|'resize'; handle?: 'nw'|'ne'|'se'|'sw'; pointerId?: number } | null>(null);
+  // pointer drag state (move, resize or wall endpoint)
+  const dragState = useRef<{ id?: string; offsetX?: number; offsetY?: number; lastX?: number; lastY?: number; lastW?: number; lastH?: number; mode?: 'move'|'resize'|'wall-handle'; handle?: 'nw'|'ne'|'se'|'sw'|'p1'|'p2'; pointerId?: number } | null>(null);
+  const objectDragRef = useRef<{ id?: string; offsetX?: number; offsetY?: number; pointerId?: number } | null>(null);
 
   const [measure, setMeasure] = useState<{ visible: boolean; text: string; x: number; y: number }>({ visible: false, text: '', x: 0, y: 0 });
 
@@ -232,13 +238,67 @@ export default function PlantaPage() {
       setMeasure({ visible: true, text: `${ (dragState.current.lastW || 0).toFixed(2) }m × ${ (dragState.current.lastH || 0).toFixed(2) }m`, x: toPixels(nx), y: toPixels(ny) });
       return;
     }
+
+    if (dragState.current.mode === 'wall-handle') {
+      // dragging a wall endpoint
+      const which = dragState.current.handle as 'p1'|'p2';
+      const wx = toMeters(loc.x);
+      const wy = toMeters(loc.y);
+      setPlacedWalls((walls) => walls.map((w:any) => {
+        if (w.id !== id) return w;
+        if (which === 'p1') return { ...w, x1: Number(wx.toFixed(3)), y1: Number(wy.toFixed(3)) };
+        return { ...w, x2: Number(wx.toFixed(3)), y2: Number(wy.toFixed(3)) };
+      }));
+      return;
+    }
   }
 
   function onPointerUp(e: React.PointerEvent) {
     if (!dragState.current) return;
+    const prevMode = dragState.current.mode;
     try { (e.target as Element).releasePointerCapture(e.pointerId); } catch (err) { console.debug('releasePointerCapture failed', err); }
     dragState.current = null;
     setMeasure({ visible: false, text: '', x: 0, y: 0 });
+    // if we just finished dragging a wall handle, autosave silently
+    if (prevMode === 'wall-handle') {
+      setTimeout(() => savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current } as any, { notify: false }).catch((err) => console.warn('Auto-save after wall handle failed', err)), 80);
+    }
+  }
+
+  // object drag handlers (move placed objects)
+  function startObjectDrag(e: React.PointerEvent, objId: string) {
+    e.stopPropagation();
+    const svg = svgRef.current; if (!svg) return;
+    const pt = svg.createSVGPoint(); pt.x = (e as any).clientX; pt.y = (e as any).clientY;
+    const ctm = svg.getScreenCTM(); if (!ctm) return;
+    const loc = pt.matrixTransform(ctm.inverse());
+    const obj = placedObjectsRef.current.find((o:any) => o.id === objId);
+    if (!obj) return;
+    objectDragRef.current = { id: objId, offsetX: loc.x - toPixels(obj.posicao.x), offsetY: loc.y - toPixels(obj.posicao.y), pointerId: e.pointerId };
+    try { (e.target as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
+  }
+
+  function moveObjectDrag(e: React.PointerEvent) {
+    if (!objectDragRef.current) return;
+    const svg = svgRef.current; if (!svg) return;
+    const pt = svg.createSVGPoint(); pt.x = (e as any).clientX; pt.y = (e as any).clientY;
+    const ctm = svg.getScreenCTM(); if (!ctm) return;
+    const loc = pt.matrixTransform(ctm.inverse());
+    const id = objectDragRef.current.id!;
+    let nx = toMeters(loc.x - (objectDragRef.current.offsetX || 0));
+    let ny = toMeters(loc.y - (objectDragRef.current.offsetY || 0));
+    // snap
+    nx = Math.round(nx / gridStep) * gridStep;
+    ny = Math.round(ny / gridStep) * gridStep;
+    setPlacedObjects((s) => s.map((o:any) => o.id === id ? { ...o, posicao: { ...o.posicao, x: Number(nx.toFixed(3)), y: Number(ny.toFixed(3)) } } : o));
+  }
+
+  function endObjectDrag(e: React.PointerEvent) {
+    if (!objectDragRef.current) return;
+    try { (e.target as Element).releasePointerCapture(e.pointerId); } catch { /* noop */ }
+    objectDragRef.current = null;
+    // autosave
+    setTimeout(() => savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current } as any, { notify: false }).catch((err) => console.warn('Auto-save after moving object failed', err)), 80);
   }
 
   function onHandlePointerDown(e: React.PointerEvent, roomId: string, handle: 'nw'|'ne'|'se'|'sw') {
@@ -247,6 +307,15 @@ export default function PlantaPage() {
     if (!room) return;
     try { (e.target as Element).setPointerCapture(e.pointerId); } catch (err) { console.debug('setPointerCapture failed', err); }
     dragState.current = { id: roomId, mode: 'resize', handle, lastX: room.x, lastY: room.y, lastW: room.width, lastH: room.length, pointerId: e.pointerId };
+  }
+
+  // start dragging a wall endpoint handle ('p1' -> x1,y1, 'p2' -> x2,y2)
+  function onWallHandlePointerDown(e: React.PointerEvent, wallId: string, which: 'p1'|'p2') {
+    const svg = svgRef.current; if (!svg) return;
+    const wall = placedWalls.find((w) => w.id === wallId);
+    if (!wall) return;
+    try { (e.target as Element).setPointerCapture(e.pointerId); } catch (err) { console.debug('setPointerCapture failed', err); }
+    dragState.current = { id: wallId, mode: 'wall-handle', handle: which, pointerId: e.pointerId } as any;
   }
 
   function copyRoom(roomId: string) {
@@ -278,7 +347,12 @@ export default function PlantaPage() {
     const w = Number(editForm.width || 0);
     const l = Number(editForm.length || 0);
     const h = Number(editForm.height || 2.7);
-    if (!editForm.name || !w || !l) return alert('Preencha nome, largura e comprimento válidos');
+    if (!editForm.name || !w || !l) {
+      setSaveToast('Preencha nome, largura e comprimento válidos');
+      setSaveStatus('error');
+      setTimeout(() => setSaveToast(null), 2500);
+      return;
+    }
     setAmbientes((s) => s.map((a) => a.id === id ? { ...a, name: String(editForm.name), width: w, length: l, height: h } : a));
     setPlacedRooms((s) => s.map((r:any) => r.id === id ? { ...r, name: String(editForm.name), width: w, length: l, height: h } : r));
     setEditingRoomId(null);
@@ -322,6 +396,8 @@ export default function PlantaPage() {
   const segsInfo = computeWallSegments(placedRooms);
 
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle'|'saving'|'saved'|'error'>('idle');
+  const [saveToast, setSaveToast] = useState<string | null>(null);
   const [_loadedPlantaId, setLoadedPlantaId] = useState<string | null>(null);
   const [show3D, setShow3D] = useState(false);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
@@ -329,6 +405,7 @@ export default function PlantaPage() {
   const [selectedRoomIds, setSelectedRoomIds] = useState<string[]>([]);
   const [copiedRoom, setCopiedRoom] = useState<any | null>(null);
   const [selectedOpening, setSelectedOpening] = useState<{ wallId: string; openingId: string } | null>(null);
+  const [selectedObject, setSelectedObject] = useState<any | null>(null);
   const [showSavedModal, setShowSavedModal] = useState(false);
   const [savedPlantas, setSavedPlantas] = useState<any[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
@@ -336,36 +413,102 @@ export default function PlantaPage() {
 
   // refs to hold latest values for keyboard handler to avoid variable-length deps
   const selectedRoomIdsRef = useRef<string[]>(selectedRoomIds);
+  const selectedWallIdRef = useRef<string | null>(selectedWallId);
   const placedRoomsRef = useRef<any[]>(placedRooms);
   const copiedRoomRef = useRef<any | null>(copiedRoom);
   const selectedOpeningRef = useRef<{ wallId: string; openingId: string } | null>(selectedOpening);
   const placedWallsRef = useRef<any[]>(placedWalls);
   const placedObjectsRef = useRef<any[]>(placedObjects);
+  const selectedObjectRef = useRef<any | null>(selectedObject);
   const editingRoomIdRef = useRef<string | null>(editingRoomId);
 
   // keep refs in sync
   selectedRoomIdsRef.current = selectedRoomIds;
+  selectedWallIdRef.current = selectedWallId;
   placedRoomsRef.current = placedRooms;
   copiedRoomRef.current = copiedRoom;
   selectedOpeningRef.current = selectedOpening;
   placedWallsRef.current = placedWalls;
   placedObjectsRef.current = placedObjects;
+  selectedObjectRef.current = selectedObject;
   editingRoomIdRef.current = editingRoomId;
 
   // debug: log when placedRooms or placedWalls change and expose helper
   useEffect(() => {
     console.log('placedRooms changed:', (placedRooms || []).length, placedRooms);
-    // expose quick debug helper
-    try { (window as any).plantaDebug = () => console.log({ placedRooms, placedWalls, placedRoomsRef: placedRoomsRef.current, placedWallsRef: placedWallsRef.current }); } catch (err) { console.warn('plantaDebug attach failed', err); }
+    // expose quick debug helper (use refs to avoid adding placedWalls to deps)
+    try { (window as any).plantaDebug = () => console.log({ placedRooms: placedRoomsRef.current, placedWalls: placedWallsRef.current, placedRoomsRef: placedRoomsRef.current, placedWallsRef: placedWallsRef.current }); } catch (err) { console.warn('plantaDebug attach failed', err); }
   }, [placedRooms]);
   useEffect(() => { console.log('placedWalls changed:', (placedWalls || []).length, placedWalls); }, [placedWalls]);
   useEffect(() => { console.log('placedObjects changed:', (placedObjects || []).length, placedObjects); }, [placedObjects]);
 
+  // auto-hide save toast based on saveStatus
+  useEffect(() => {
+    let t: any = null;
+    if (saveStatus === 'saving') {
+      if (!saveToast) setSaveToast('Salvando...');
+      return () => { if (t) clearTimeout(t); };
+    }
+    if (saveStatus === 'saved') {
+      if (!saveToast) setSaveToast('Salvo');
+      t = setTimeout(() => { setSaveToast(null); setSaveStatus('idle'); }, 1800);
+    }
+    if (saveStatus === 'error') {
+      if (!saveToast) setSaveToast('Erro ao salvar');
+      t = setTimeout(() => { setSaveToast(null); setSaveStatus('idle'); }, 3000);
+    }
+    return () => { if (t) clearTimeout(t); };
+  }, [saveStatus, saveToast]);
+
+  // place item from gallery into 2D editor
+  function placeObject2DOnWall(item: any, wallId: string, offsetMeters: number) {
+    const wall = placedWallsRef.current.find((w:any) => w.id === wallId);
+    if (!wall) return;
+    // compute position along wall
+    const dx = wall.x2 - wall.x1; const dy = wall.y2 - wall.y1; const len = Math.hypot(dx, dy);
+    const ux = dx / (len || 1); const uy = dy / (len || 1);
+    const cx = wall.x1 + offsetMeters * ux;
+    const cy = wall.y1 + offsetMeters * uy;
+    const tipo = item.category==='portas' ? 'porta' : (item.category==='janelas' ? 'janela' : 'movel');
+    const obj = { id: `obj_${Date.now()}`, tipo, modelo: item.id, paredeId: wallId, ambienteId: null, largura: item.width, altura: item.height, posicao: { x: cx, y: cy, offset: offsetMeters } };
+
+    // if it's a door/window, also add an opening to the wall geometry
+    if (tipo === 'porta' || tipo === 'janela') {
+      const openingId = `o_${Date.now()}`;
+      const halfW = Number(item.width || 0) / 2;
+      let offsetStart = Math.max(0, offsetMeters - halfW);
+      // clamp within wall length
+      offsetStart = Math.max(0, Math.min(offsetStart, Math.max(0, len - Number(item.width || 0))));
+      const opening = { id: openingId, type: tipo, width: Number(item.width || 0), height: Number(item.height || (tipo === 'porta' ? 2.1 : 1.2)), offset: Number(offsetStart.toFixed(3)), bottom: Number(item.bottom || 0) };
+      addOpeningToWall(wallId, opening);
+    }
+
+    setPlacedObjects(prev => [...prev, obj]);
+    // autosave (silent)
+    savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current } as any, { notify: false }).catch((e) => console.warn('Auto-save after placing object failed', e));
+  }
+
+  function placeObject2DInRoom(item: any, roomId: string, atX:number|null=null, atY:number|null=null) {
+    const room = placedRoomsRef.current.find((r:any)=> r.id === roomId);
+    if (!room) return;
+    const cx = atX !== null ? atX : (room.x + (room.width / 2));
+    const cy = atY !== null ? atY : (room.y + (room.length / 2));
+    const obj = { id: `obj_${Date.now()}`, tipo: 'movel', modelo: item.id, paredeId: null, ambienteId: roomId, largura: item.width, altura: item.height, posicao: { x: cx, y: cy, offset: 0 } };
+    setPlacedObjects(prev => [...prev, obj]);
+    savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current } as any, { notify: false }).catch((e) => console.warn('Auto-save after placing object failed', e));
+  }
+
   const shortcutDepsHash = useMemo(() => JSON.stringify({ s: selectedRoomIds, pr: placedRooms, cr: copiedRoom, so: selectedOpening, pw: placedWalls, er: editingRoomId }), [selectedRoomIds, placedRooms, copiedRoom, selectedOpening, placedWalls, editingRoomId]);
 
-  async function savePlanta(overridePayload?: { ambientes: any[]; paredes: any[] }) {
-    if (!params.id) return alert('Projeto não identificado');
+  async function savePlanta(overridePayload?: { ambientes: any[]; paredes: any[] }, opts: { notify?: boolean } = { notify: true }) {
+    if (!params.id) {
+      setSaveStatus('error');
+      setSaveToast('Projeto não identificado');
+      setTimeout(() => setSaveToast(null), 2500);
+      return;
+    }
     setSaving(true);
+    setSaveStatus('saving');
     try {
       // sanitize payload to avoid accidentally serializing DOM/React nodes
       function sanitizePlantaData(raw: { ambientes: any[]; paredes: any[]; objects?: any[] } | undefined) {
@@ -405,30 +548,51 @@ export default function PlantaPage() {
         console.log('savePlanta insert result:', inserted);
         setLoadedPlantaId(inserted.id);
       }
-      alert('Planta salva.');
+      setSaveStatus('saved');
+      if (opts.notify !== false) {
+        setSaveToast('Planta salva');
+        setTimeout(() => setSaveToast(null), 1800);
+      }
     } catch (err:any) {
       console.error(err);
-      alert('Erro ao salvar planta: ' + (err.message || err));
+      setSaveStatus('error');
+      if (opts.notify !== false) {
+        setSaveToast('Erro ao salvar planta');
+        setTimeout(() => setSaveToast(null), 3000);
+      }
     } finally { setSaving(false); }
   }
 
   async function loadPlanta() {
-    if (!params.id) return alert('Projeto não identificado');
+    if (!params.id) {
+      setSaveToast('Projeto não identificado');
+      setSaveStatus('error');
+      setTimeout(() => setSaveToast(null), 2500);
+      return;
+    }
     try {
       // use maybeSingle to avoid error when no rows are returned
       const { data, error } = await supabase.from('plantas').select('id,data').eq('projeto_id', params.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (error) throw error;
-      if (!data || !data.data) return alert('Nenhuma planta encontrada para este projeto');
+      if (!data || !data.data) {
+        setSaveToast('Nenhuma planta encontrada para este projeto');
+        setSaveStatus('error');
+        setTimeout(() => setSaveToast(null), 2500);
+        return;
+      }
       const doc = data.data as any;
       // load ambientes and paredes with positions
       setPlacedRooms(doc.ambientes || []);
       setPlacedWalls(doc.paredes || []);
       setAmbientes((doc.ambientes || []).map((a:any) => ({ id: a.id, name: a.name, width: a.width, length: a.length, height: a.height, isClosed: a.isClosed, countsAsAlvenaria: a.countsAsAlvenaria, hasForro: a.hasForro })));
       setLoadedPlantaId(data.id);
-      alert('Planta carregada');
+      setSaveToast('Planta carregada');
+      setTimeout(() => setSaveToast(null), 1800);
     } catch (err:any) {
       console.error(err);
-      alert('Erro ao carregar planta: ' + (err.message || err));
+      setSaveStatus('error');
+      setSaveToast('Erro ao carregar planta: ' + (err.message || err));
+      setTimeout(() => setSaveToast(null), 3500);
     }
   }
 
@@ -456,7 +620,9 @@ export default function PlantaPage() {
       setSavedPlantas(data || []);
     } catch (err:any) {
       console.error('Erro ao buscar plantas salvas', err);
-      alert('Erro ao buscar plantas salvas: ' + (err.message || err));
+      setSaveStatus('error');
+      setSaveToast('Erro ao buscar plantas salvas: ' + (err.message || err));
+      setTimeout(() => setSaveToast(null), 3500);
     } finally { setLoadingSaved(false); }
   }
 
@@ -471,7 +637,9 @@ export default function PlantaPage() {
       if (error) throw error;
       if (!data) {
         setOpenStatus('Planta não encontrada');
-        return alert('Planta não encontrada');
+        setSaveToast('Planta não encontrada');
+        setTimeout(() => setSaveToast(null), 2500);
+        return;
       }
       // data.data might be an object or a JSON string depending on how it was stored
       let docAny: any = data.data;
@@ -480,7 +648,9 @@ export default function PlantaPage() {
       if (typeof docAny === 'string') console.log('planta row.data (string length):', docAny.length);
       if (!docAny) {
         setOpenStatus('Planta sem conteúdo');
-        return alert('Planta sem conteúdo');
+        setSaveToast('Planta sem conteúdo');
+        setTimeout(() => setSaveToast(null), 2500);
+        return;
       }
       if (typeof docAny === 'string') {
         try { docAny = JSON.parse(docAny); } catch (e) { console.warn('Could not parse planta.data JSON string', e); }
@@ -493,6 +663,10 @@ export default function PlantaPage() {
       const saneParedes = Array.isArray(paredesData) ? paredesData : [];
       setPlacedRooms(saneAmb.map((a:any) => ({ ...a })));
       setPlacedWalls(saneParedes.map((w:any) => ({ ...w })));
+      // load placed objects if present (support legacy keys)
+      const objsData = docAny.objetos || docAny.objects || [];
+      const saneObjs = Array.isArray(objsData) ? objsData.map((o:any) => ({ id: o.id || `obj_${Date.now()}`, tipo: o.tipo || 'movel', modelo: o.modelo || null, paredeId: o.paredeId || o.parede_id || null, ambienteId: o.ambienteId || o.ambiente_id || null, largura: Number(o.largura||o.width||0), altura: Number(o.altura||o.height||0), posicao: { x: Number(o.posicao?.x||o.x||0), y: Number(o.posicao?.y||o.y||0), offset: Number(o.posicao?.offset||o.offset||0) } })) : [];
+      setPlacedObjects(saneObjs);
       console.log('placedRooms set to:', saneAmb);
       console.log('placedWalls set to:', saneParedes);
       setAmbientes(saneAmb.map((a:any) => ({ id: a.id, name: a.name, width: a.width, length: a.length, height: a.height, isClosed: a.isClosed, countsAsAlvenaria: a.countsAsAlvenaria, hasForro: a.hasForro })));
@@ -500,16 +674,20 @@ export default function PlantaPage() {
       if ((saneAmb.length === 0 && saneParedes.length === 0)) {
         setOpenStatus('Planta aberta, mas está vazia (0 ambientes e 0 paredes)');
         // keep modal open so user can choose another planta
-        alert('Planta aberta, mas está vazia (0 ambientes e 0 paredes)');
+        setSaveToast('Planta aberta, mas está vazia (0 ambientes e 0 paredes)');
+        setTimeout(() => setSaveToast(null), 3000);
       } else {
         setShowSavedModal(false);
         setOpenStatus('Planta aberta');
-        alert('Planta aberta');
+        setSaveToast('Planta aberta');
+        setTimeout(() => setSaveToast(null), 1800);
       }
     } catch (err:any) {
       console.error(err);
       setOpenStatus('Erro ao abrir planta: ' + (err.message || err));
-      alert('Erro ao abrir planta: ' + (err.message || err));
+      setSaveStatus('error');
+      setSaveToast('Erro ao abrir planta: ' + (err.message || err));
+      setTimeout(() => setSaveToast(null), 3500);
     } finally {
       setLoadingSaved(false);
     }
@@ -521,10 +699,13 @@ export default function PlantaPage() {
       const { error } = await supabase.from('plantas').delete().eq('id', plantaId);
       if (error) throw error;
       setSavedPlantas((s) => s.filter(p => p.id !== plantaId));
-      alert('Planta excluída');
+      setSaveToast('Planta excluída');
+      setTimeout(() => setSaveToast(null), 1800);
     } catch (err:any) {
       console.error(err);
-      alert('Erro ao excluir planta: ' + (err.message || err));
+      setSaveStatus('error');
+      setSaveToast('Erro ao excluir planta: ' + (err.message || err));
+      setTimeout(() => setSaveToast(null), 3500);
     }
   }
 
@@ -548,7 +729,66 @@ export default function PlantaPage() {
       setPlacedWalls((s) => [...s, newWall]);
       return;
     }
-    // not placing wall: try to pick nearest wall to click
+    // not placing wall: if cutWallMode is active, try to remove nearest wall
+    if (cutWallMode) {
+      // remove nearest wall within threshold
+      const threshold = 0.25;
+      let best: { id: string; dist: number } | null = null;
+      for (const w of placedWallsRef.current) {
+        const x1 = w.x1; const y1 = w.y1; const x2 = w.x2; const y2 = w.y2;
+        const A = mx - x1; const B = my - y1; const C = x2 - x1; const D = y2 - y1;
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, dot / lenSq));
+        const px = x1 + t * C; const py = y1 + t * D;
+        const dist = Math.hypot(mx - px, my - py);
+        if (dist <= threshold && (!best || dist < best.dist)) best = { id: w.id, dist };
+      }
+      if (best) {
+        if (!confirm('Deseja realmente cortar/remover esta parede?')) { setCutWallMode(false); return; }
+        setPlacedWalls((s) => (s || []).filter((w:any) => w.id !== best!.id));
+        setCutWallMode(false);
+        // autosave silently
+        setTimeout(() => savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current } as any, { notify: false }).catch((err) => console.warn('Auto-save after cutting wall failed', err)), 80);
+        return;
+      }
+    }
+
+    // not placing wall: if a gallery item is selected, try to place it on a wall or room
+    if (selectedGalleryItem) {
+      // try to find nearest wall and projection distance
+      const threshold = 0.25; // 25 cm
+      let best: { id: string; dist: number; proj: number } | null = null;
+      for (const w of placedWallsRef.current) {
+        const x1 = w.x1; const y1 = w.y1; const x2 = w.x2; const y2 = w.y2;
+        const A = mx - x1; const B = my - y1; const C = x2 - x1; const D = y2 - y1;
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, dot / lenSq));
+        const px = x1 + t * C; const py = y1 + t * D;
+        const dist = Math.hypot(mx - px, my - py);
+        if (dist <= threshold && (!best || dist < best.dist)) {
+          const proj = ( (mx - x1) * (C / Math.sqrt(lenSq || 1)) + (my - y1) * (D / Math.sqrt(lenSq || 1)) );
+          best = { id: w.id, dist, proj };
+        }
+      }
+      if (best) {
+        // place on wall using projection (proj is distance from wall start)
+        placeObject2DOnWall(selectedGalleryItem, best.id, Number(best.proj.toFixed(3)));
+        // clear selection so next click doesn't keep placing
+        setSelectedGalleryItem(null);
+        return;
+      }
+      // otherwise try to place inside a room
+      const roomHit = placedRoomsRef.current.find((r:any) => mx >= r.x && mx <= r.x + r.width && my >= r.y && my <= r.y + r.length);
+      if (roomHit) {
+        placeObject2DInRoom(selectedGalleryItem, roomHit.id, mx, my);
+        setSelectedGalleryItem(null);
+        return;
+      }
+    }
+
+    // fallback: try to pick nearest wall to click (no gallery item selected)
     pickWallNearPoint(mx, my);
   }
 
@@ -622,15 +862,15 @@ export default function PlantaPage() {
     // clear any temporary selection from drag (keep selection)
     // autosave after finishing drag (delay to allow state updates to flush)
     setTimeout(() => {
-      savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current }).catch((err) => console.warn('Auto-save after drag failed', err));
+      savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current }, { notify: false }).catch((err) => console.warn('Auto-save after drag failed', err));
     }, 80);
   }
 
   function addOpeningToWall(wallId: string, opening: any) {
     const next = (placedWalls || []).map((w:any) => w.id === wallId ? { ...w, openings: [...(w.openings||[]), opening] } : w);
     setPlacedWalls(next);
-    // auto-save after adding opening (use refs to avoid stale state)
-    savePlanta({ ambientes: placedRoomsRef.current, paredes: next }).catch((e) => console.warn('Auto-save falhou', e));
+    // auto-save after adding opening (silent)
+    savePlanta({ ambientes: placedRoomsRef.current, paredes: next }, { notify: false }).catch((e) => console.warn('Auto-save falhou', e));
   }
 
   // selection, copy/paste and grouping utilities
@@ -654,7 +894,11 @@ export default function PlantaPage() {
   }
 
   function pasteCopiedRoom() {
-    if (!copiedRoom) return alert('Nada copiado');
+    if (!copiedRoom) {
+      setSaveToast('Nada copiado');
+      setTimeout(() => setSaveToast(null), 1800);
+      return;
+    }
     const newId = String(Date.now());
     const room = { ...copiedRoom, id: newId, x: +(copiedRoom.x + 0.5).toFixed(3), y: +(copiedRoom.y + 0.5).toFixed(3), name: (copiedRoom.name||'Cópia') };
     setAmbientes((s) => [...s, { id: room.id, name: room.name, width: room.width, length: room.length, height: room.height, isClosed: room.isClosed, countsAsAlvenaria: room.countsAsAlvenaria, hasForro: room.hasForro }]);
@@ -677,17 +921,26 @@ export default function PlantaPage() {
   }
 
   function groupSelectedRooms() {
-    if (selectedRoomIds.length < 2) return alert('Selecione pelo menos dois cômodos (Shift+Clique)');
+    if (selectedRoomIds.length < 2) {
+      setSaveToast('Selecione pelo menos dois cômodos (Shift+Clique)');
+      setTimeout(() => setSaveToast(null), 2000);
+      return;
+    }
     const gid = `g_${Date.now()}`;
     setPlacedRooms((s) => s.map(r => selectedRoomIds.includes(r.id) ? { ...r, groupId: gid } : r));
   }
 
   function ungroupSelectedRooms() {
-    if (selectedRoomIds.length === 0) return alert('Nenhum cômodo selecionado');
+    if (selectedRoomIds.length === 0) {
+      setSaveToast('Nenhum cômodo selecionado');
+      setTimeout(() => setSaveToast(null), 1800);
+      return;
+    }
     setPlacedRooms((s) => s.map(r => selectedRoomIds.includes(r.id) ? { ...r, groupId: undefined } : r));
   }
 
   // keyboard shortcuts for copy/paste
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
@@ -710,7 +963,19 @@ export default function PlantaPage() {
         e.preventDefault();
         saveEditRoom(editingRoomIdRef.current);
       }
-      // Delete or Backspace: remove selected opening if any
+      // Delete or Backspace: remove selected wall, opening or selected object
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedWallIdRef.current) {
+        e.preventDefault();
+        const wid = selectedWallIdRef.current!;
+        if (!confirm('Deseja realmente excluir a parede selecionada?')) return;
+        const next = (placedWallsRef.current || []).filter((w:any) => w.id !== wid);
+        setPlacedWalls(next);
+        setSelectedWallId(null);
+        // autosave silently
+        setTimeout(() => savePlanta({ ambientes: placedRoomsRef.current, paredes: next }, { notify: false }).catch((err) => console.warn('Auto-save delete wall failed', err)), 80);
+        return;
+      }
+
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedOpeningRef.current) {
         e.preventDefault();
         const selOpen = selectedOpeningRef.current!;
@@ -720,8 +985,16 @@ export default function PlantaPage() {
         });
         setPlacedWalls(nextWalls);
         setSelectedOpening(null);
-        // auto-save with updated walls (sanitize happens inside savePlanta)
-        savePlanta({ ambientes: placedRoomsRef.current, paredes: nextWalls }).catch((err) => console.warn('Auto-save delete opening failed', err));
+        // auto-save with updated walls (sanitize happens inside savePlanta) - silent
+        savePlanta({ ambientes: placedRoomsRef.current, paredes: nextWalls }, { notify: false }).catch((err) => console.warn('Auto-save delete opening failed', err));
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObjectRef.current) {
+        e.preventDefault();
+        const obj = selectedObjectRef.current!;
+        setPlacedObjects((s) => (s || []).filter((o:any) => o.id !== obj.id));
+        setSelectedObject(null);
+        // autosave objects removal (silent)
+        setTimeout(() => savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current } as any, { notify: false }).catch((err) => console.warn('Auto-save delete object failed', err)), 80);
       }
     }
     window.addEventListener('keydown', onKey);
@@ -745,14 +1018,39 @@ export default function PlantaPage() {
           <button onClick={async () => { setShowSavedModal(true); await fetchSavedPlantas(); }} className="bg-gray-100 px-3 py-1 rounded">Plantas salvas</button>
         </div>
         {editingRoomId && (
-          <div className="flex items-center gap-2">
-            <button onClick={() => saveEditRoom(editingRoomId)} className="bg-green-600 text-white px-3 py-1 rounded">Salvar</button>
-            <button onClick={cancelEditRoom} className="bg-gray-200 px-3 py-1 rounded">Cancelar</button>
-          </div>
+          <>
+            <div className="flex items-center gap-2">
+              <button onClick={() => saveEditRoom(editingRoomId)} className="bg-green-600 text-white px-3 py-1 rounded">Salvar</button>
+              <button onClick={cancelEditRoom} className="bg-gray-200 px-3 py-1 rounded">Cancelar</button>
+            </div>
+            <div className="p-2 border rounded mb-4">
+              <h3 className="font-medium">Galeria</h3>
+              <div className="mt-2">
+                <GallerySidebar items={undefined} onSelectItem={(it) => { setSelectedGalleryItem(it); }} />
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => setCutWallMode(s => !s)} className={`px-2 py-1 rounded ${cutWallMode ? 'bg-red-500 text-white' : 'bg-gray-100'}`}>{cutWallMode ? 'Cortar: ON' : 'Cortar parede'}</button>
+                  <div className="text-xs text-gray-500 mt-2">Selecione um item na galeria e clique na parede ou dentro do cômodo para posicionar.</div>
+                </div>
+              </div>
+            </div>
+          </>
         )}
       </div>
+      {/* non-blocking save toast/snackbar */}
+      {(saveToast || saveStatus !== 'idle') && (
+        <div className="fixed right-4 bottom-4 z-50">
+          <div className={`px-4 py-2 rounded shadow-lg flex items-center gap-2 ${saveStatus === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'}`}>
+            {saveStatus === 'saving' && (
+              <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3"/><path d="M22 12a10 10 0 00-10-10" stroke="#fff" strokeWidth="3" strokeLinecap="round"/></svg>
+            )}
+            <div className="text-sm">
+              {saveStatus === 'saving' ? 'Salvando...' : saveStatus === 'saved' ? (saveToast || 'Salvo') : saveStatus === 'error' ? (saveToast || 'Erro ao salvar') : (saveToast || null)}
+            </div>
+          </div>
+        </div>
+      )}
 
-      <div className={`mt-4 grid grid-cols-1 ${editorFullscreen ? '' : 'lg:grid-cols-3'} gap-4`}>
+      <div className={`mt-4 grid grid-cols-1 ${editorFullscreen ? '' : 'lg:grid-cols-4'} gap-4`}>
         {!editorFullscreen && compactSidebar ? (
           <div className="col-span-1 w-20 p-2 flex flex-col items-center gap-2">
             <button title="Expandir painel" onClick={() => setCompactSidebar(false)} className="p-2 rounded bg-gray-100 border"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12h16" stroke="#374151" strokeWidth="1.5" strokeLinecap="round"/></svg></button>
@@ -766,6 +1064,7 @@ export default function PlantaPage() {
             </div>
           </div>
         ) : null}
+        {/* left column(s) rendered above; gallery will be placed on the right column (fixed) */}
         {!editorFullscreen && !compactSidebar ? (
         <div className="col-span-1 space-y-4">
           <div className="p-4 border rounded">
@@ -856,7 +1155,7 @@ export default function PlantaPage() {
                   <span>Carregar planta</span>
                 </button>
 
-                <button onClick={() => setShow3D(true)} className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-3 py-2 rounded">
+                <button onClick={() => setShow3D(s => !s)} className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-3 py-2 rounded">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l9 4.5v9L12 22 3 15.5v-9L12 2z" stroke="#fff" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   <span>Visualizar em 3D</span>
                 </button>
@@ -865,7 +1164,7 @@ export default function PlantaPage() {
         </div>
         ) : null}
 
-        <div className={editorFullscreen ? 'col-span-1' : 'col-span-2'}>
+        <div className={editorFullscreen ? 'col-span-1' : ((showGallery || show3D) ? 'col-span-2' : 'col-span-3')}>
           <div className="p-4 border rounded mb-4">
             <h2 className="font-semibold">Ferramentas</h2>
             <div className="flex gap-2 mt-2">
@@ -874,7 +1173,7 @@ export default function PlantaPage() {
               </button>
 
               <button title="Adicionar porta" aria-label="Adicionar porta" onClick={() => {
-                if (!selectedWallId) return alert('Selecione uma parede');
+                if (!selectedWallId) { setSaveToast('Selecione uma parede'); setTimeout(() => setSaveToast(null), 1800); return; }
                 const width = parseFloat(prompt('Largura da porta (m)', '0.8') || '0.8');
                 const offset = parseFloat(prompt('Offset da parede (m) a partir do início', '0.2') || '0.2');
                 addOpeningToWall(selectedWallId, { id: String(Date.now()), type: 'porta', width, height: 2.1, offset, bottom: 0 });
@@ -883,12 +1182,12 @@ export default function PlantaPage() {
               </button>
 
               <button title="Adicionar janela" aria-label="Adicionar janela" onClick={() => {
-                if (!selectedWallId) return alert('Selecione uma parede');
+                if (!selectedWallId) { setSaveToast('Selecione uma parede'); setTimeout(() => setSaveToast(null), 1800); return; }
                 const width = parseFloat(prompt('Largura da janela (m)', '1.0') || '1.0');
                 const offset = parseFloat(prompt('Offset da parede (m) a partir do início', '0.5') || '0.5');
                 const wall = placedWalls.find((w:any)=>w.id === selectedWallId);
-                if (!wall) return alert('Parede não encontrada');
-                if (wall.type !== 'externa') return alert('Janela só pode ser adicionada em paredes externas');
+                if (!wall) { setSaveToast('Parede não encontrada'); setTimeout(() => setSaveToast(null), 2000); return; }
+                if (wall.type !== 'externa') { setSaveToast('Janela só pode ser adicionada em paredes externas'); setTimeout(() => setSaveToast(null), 2600); return; }
                 addOpeningToWall(selectedWallId, { id: String(Date.now()), type: 'janela', width, height: 1.2, offset, bottom: 1.0 });
               }} className="p-2 rounded bg-amber-100 hover:bg-amber-200 border">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" stroke="#92400e" strokeWidth="1.2" fill="none"/><line x1="3" y1="12" x2="21" y2="12" stroke="#92400e" strokeWidth="1"/></svg>
@@ -896,6 +1195,29 @@ export default function PlantaPage() {
 
               <button title="Organizar cômodos" aria-label="Organizar cômodos" onClick={() => organizeRooms()} className="p-2 rounded bg-violet-100 hover:bg-violet-200 border">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="7" height="7" stroke="#5b21b6" strokeWidth="1.2"/><rect x="14" y="3" width="7" height="7" stroke="#5b21b6" strokeWidth="1.2"/><rect x="3" y="14" width="7" height="7" stroke="#5b21b6" strokeWidth="1.2"/><rect x="14" y="14" width="7" height="7" stroke="#5b21b6" strokeWidth="1.2"/></svg>
+              </button>
+              <button title="Galeria" aria-label="Mostrar galeria" onClick={() => setShowGallery(s => !s)} className="p-2 rounded bg-gray-100 hover:bg-gray-200 border">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="7" height="7" stroke="#111827" strokeWidth="1.2"/><rect x="14" y="3" width="7" height="7" stroke="#111827" strokeWidth="1.2"/><rect x="3" y="14" width="7" height="7" stroke="#111827" strokeWidth="1.2"/></svg>
+              </button>
+
+              <button title="Novo ambiente (rápido)" aria-label="Novo ambiente" onClick={() => { setMinimizedNewRoom(false); setShowNewRoomForm(s => !s); }} className="p-2 rounded bg-gray-100 hover:bg-gray-200 border">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="#111827" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
+
+              <button title="Remover parede selecionada" aria-label="Remover parede" onClick={async () => {
+                if (!selectedWallId) { setSaveToast('Selecione uma parede para remover'); setTimeout(() => setSaveToast(null), 1800); return; }
+                if (!confirm('Deseja realmente remover a parede selecionada?')) return;
+                const next = (placedWallsRef.current || []).filter(w => w.id !== selectedWallId);
+                setPlacedWalls(next);
+                setSelectedWallId(null);
+                try {
+                  await savePlanta({ ambientes: placedRoomsRef.current, paredes: next }, { notify: false });
+                  setSaveToast('Parede removida'); setTimeout(() => setSaveToast(null), 1500);
+                } catch (e:any) {
+                  console.error('Erro ao remover parede', e); setSaveStatus('error'); setSaveToast('Erro ao remover parede'); setTimeout(() => setSaveToast(null), 2500);
+                }
+              }} className="p-2 rounded bg-red-100 hover:bg-red-200 border">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 7h12" stroke="#b91c1c" strokeWidth="1.5" strokeLinecap="round"/><path d="M10 7v10m4-10v10" stroke="#b91c1c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </button>
 
               <button title="Agrupar cômodos" aria-label="Agrupar cômodos" onClick={() => groupSelectedRooms()} className="p-2 rounded bg-sky-100 hover:bg-sky-200 border">
@@ -980,8 +1302,9 @@ export default function PlantaPage() {
                         // auto-save after editing opening
                         try {
                           await savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current });
-                          alert('Abertura atualizada e salva');
-                        } catch (e:any) { console.error(e); alert('Erro ao salvar abertura: ' + (e?.message||e)); }
+                          setSaveToast('Abertura atualizada e salva');
+                          setTimeout(() => setSaveToast(null), 1800);
+                        } catch (e:any) { console.error(e); setSaveStatus('error'); setSaveToast('Erro ao salvar abertura: ' + (e?.message||e)); setTimeout(() => setSaveToast(null), 3500); }
                       }} className="px-3 py-1 bg-emerald-600 text-white rounded">Salvar abertura</button>
                     </div>
                   </div>
@@ -1031,6 +1354,14 @@ export default function PlantaPage() {
                 {placedWalls.map((w) => (
                   <g key={w.id} onClick={() => setSelectedWallId(w.id)}>
                     <line x1={toPixels(w.x1)} y1={toPixels(w.y1)} x2={toPixels(w.x2)} y2={toPixels(w.y2)} stroke={selectedWallId===w.id ? '#06b6d4' : '#111827'} strokeWidth={selectedWallId===w.id ? Math.max(3, toPixels(w.thickness)+1) : Math.max(2, toPixels(w.thickness))} />
+                    {selectedWallId === w.id && (
+                      <>
+                        <circle cx={toPixels(w.x1)} cy={toPixels(w.y1)} r={6} fill="#fff" stroke="#06b6d4" strokeWidth={1.2}
+                          style={{ cursor: 'pointer' }} onPointerDown={(e) => { e.stopPropagation(); onWallHandlePointerDown(e, w.id, 'p1'); }} />
+                        <circle cx={toPixels(w.x2)} cy={toPixels(w.y2)} r={6} fill="#fff" stroke="#06b6d4" strokeWidth={1.2}
+                          style={{ cursor: 'pointer' }} onPointerDown={(e) => { e.stopPropagation(); onWallHandlePointerDown(e, w.id, 'p2'); }} />
+                      </>
+                    )}
                     {/* openings */}
                     {(w.openings||[]).map((o:any, idx:number) => {
                       // compute opening center along wall
@@ -1057,6 +1388,32 @@ export default function PlantaPage() {
                   </g>
                 ))}
                 {/* external perimeter highlight */}
+                {/* placed objects (2D markers) */}
+                {placedObjects.map((o:any) => {
+                  const x = toPixels(o.posicao?.x || 0);
+                  const y = toPixels(o.posicao?.y || 0);
+                  const w = Math.max(8, Math.min(40, toPixels((o.largura || 0) || 0.5)));
+                  const h = Math.max(8, Math.min(40, toPixels(((o.altura || 0) / 2) || 0.5)));
+                  const fill = o.tipo === 'porta' ? '#ef4444' : (o.tipo === 'janela' ? '#f59e0b' : '#6ee7b7');
+                  return (
+                    <g key={o.id} onClick={(e) => { e.stopPropagation(); setSelectedObject(o); }} style={{ cursor: 'pointer' }}>
+                      <rect
+                        x={x - w/2}
+                        y={y - h/2}
+                        width={w}
+                        height={h}
+                        fill={fill}
+                        stroke={selectedObject && selectedObject.id === o.id ? '#0f172a' : 'none'}
+                        strokeWidth={selectedObject && selectedObject.id === o.id ? 2 : 0}
+                        onPointerDown={(e) => { e.stopPropagation(); startObjectDrag(e, o.id); }}
+                        onPointerMove={(e) => moveObjectDrag(e)}
+                        onPointerUp={(e) => endObjectDrag(e)}
+                        onPointerCancel={(e) => endObjectDrag(e)}
+                      />
+                      <text x={x} y={y + h/2 + 12} fontSize={10} fill="#111827" textAnchor="middle">{o.tipo}</text>
+                    </g>
+                  );
+                })}
                 <g>
                   <text x={10} y={580} fontSize={12} fill="#111827">Perímetro externo (aprox): {segsInfo.externalLen.toFixed(2)} m</text>
                 </g>
@@ -1071,45 +1428,7 @@ export default function PlantaPage() {
             </div>
           </div>
 
-          {/* 3D Viewer modal (read-only) */}
-          {show3D && (
-            <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-6 z-50">
-              <div className="bg-white rounded shadow-lg p-2 w-[90%] h-[90%] relative" style={{ zIndex: 100000 }}>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShow3D(false); }}
-                    onPointerDown={(e) => { e.stopPropagation(); }}
-                    onMouseDown={(e) => { e.stopPropagation(); }}
-                    style={{ zIndex: 100001, pointerEvents: 'auto' }}
-                    className="absolute right-3 top-3 bg-red-500 text-white px-2 py-1 rounded"
-                  >Fechar</button>
-                  <div className="w-full h-full" style={{ position: 'relative', zIndex: 1 }}>
-                    {/* lazy load Planta3D to keep bundle small */}
-                            <div style={{ display: 'flex', width: '100%', height: '100%' }}>
-                              <div style={{ flex: 1, position: 'relative' }}>
-                                <React.Suspense fallback={<div>Carregando visual 3D...</div>}>
-                                  <Planta3D
-                                    planta={{ ambientes: placedRooms.map((r:any)=>({ id: r.id, name: r.name, width: r.width, length: r.length, height: r.height, isClosed: r.isClosed, countsAsAlvenaria: r.countsAsAlvenaria, hasForro: r.hasForro })), paredes: placedWalls }}
-                                    width={Math.round(window.innerWidth * 0.7)}
-                                    height={Math.round(window.innerHeight * 0.85)}
-                                    selectedGalleryItem={selectedGalleryItem}
-                                    onPlaceObject={(obj) => {
-                                      // append to placedObjects and auto-save
-                                      setPlacedObjects(prev => [...prev, obj]);
-                                      // schedule an auto-save with objects
-                                      savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current } as any).catch((e) => console.warn('auto-save after place failed', e));
-                                    }}
-                                  />
-                                </React.Suspense>
-                              </div>
-                              <div style={{ width: 320, borderLeft: '1px solid #eee' }}>
-                                <GallerySidebar items={undefined} onSelectItem={(it) => setSelectedGalleryItem(it)} />
-                              </div>
-                            </div>
-                  </div>
-                </div>
-            </div>
-          )}
-
+          {/* metrics + materials grid */}
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 border rounded">
               <h2 className="font-semibold">Métricas da planta</h2>
@@ -1156,9 +1475,96 @@ export default function PlantaPage() {
             </div>
           </div>
         </div>
+
+        {/* right gallery column (fixed on the right) */}
+        <div className="col-span-1">
+          <div className="space-y-4">
+            {show3D && (
+              <div className="p-2 border rounded h-[48vh] flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <strong>Visual 3D</strong>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShow3D(false)} className="text-sm px-2 py-1 bg-gray-100 rounded">Fechar</button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <React.Suspense fallback={<div>Carregando 3D...</div>}>
+                    <Planta3D
+                      planta={{ ambientes: placedRooms.map((r:any)=>({ id: r.id, name: r.name, width: r.width, length: r.length, height: r.height, isClosed: r.isClosed, countsAsAlvenaria: r.countsAsAlvenaria, hasForro: r.hasForro })), paredes: placedWalls }}
+                      width={640}
+                      height={Math.round(window.innerHeight * 0.48)}
+                      selectedGalleryItem={selectedGalleryItem}
+                      placedObjects={placedObjects}
+                      onPlaceObject={(obj) => {
+                        setPlacedObjects(prev => [...prev, obj]);
+                        savePlanta({ ambientes: placedRoomsRef.current, paredes: placedWallsRef.current } as any, { notify: false }).catch((e) => console.warn('auto-save after place failed', e));
+                      }}
+                    />
+                  </React.Suspense>
+                </div>
+              </div>
+            )}
+
+            {showGallery && (
+              <div className="p-4 border rounded h-[48vh] overflow-auto">
+                <div className="flex items-center justify-between mb-2">
+                  <strong>Galeria</strong>
+                  <div>
+                    <button onClick={() => setShowGallery(false)} className="text-sm px-2 py-1 bg-gray-100 rounded">Fechar</button>
+                  </div>
+                </div>
+                <GallerySidebar items={undefined} onSelectItem={(it) => { setSelectedGalleryItem(it); }} />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Saved plantas modal */}
+      {/* Quick new-room floating form */}
+      {showNewRoomForm && (
+        <div className="fixed left-4 top-24 z-50 w-72 bg-white shadow rounded p-4">
+          <div className="flex items-center justify-between">
+            <strong>Novo ambiente</strong>
+            <div className="flex items-center gap-2">
+              <button className="text-slate-500" onClick={() => { setMinimizedNewRoom(true); setShowNewRoomForm(false); }}>—</button>
+              <button className="text-slate-500" onClick={() => setShowNewRoomForm(false)}>✕</button>
+            </div>
+          </div>
+          <div className="mt-3 space-y-2">
+            <label className="text-sm">Nome</label>
+            <input className="w-full p-2 border rounded" value={newRoomForm.name} onChange={(e) => setNewRoomForm({ ...newRoomForm, name: e.target.value })} />
+            <div className="flex gap-2">
+              <div className="w-1/2">
+                <label className="text-sm">Largura (m)</label>
+                <input type="number" className="w-full p-2 border rounded" value={newRoomForm.width} onChange={(e) => setNewRoomForm({ ...newRoomForm, width: Number(e.target.value) })} />
+              </div>
+              <div className="w-1/2">
+                <label className="text-sm">Comprimento (m)</label>
+                <input type="number" className="w-full p-2 border rounded" value={newRoomForm.length} onChange={(e) => setNewRoomForm({ ...newRoomForm, length: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <button className="px-3 py-1 rounded bg-slate-100" onClick={() => { setShowNewRoomForm(false); setMinimizedNewRoom(false); }}>Cancelar</button>
+              <button className="px-3 py-1 rounded bg-blue-600 text-white" onClick={() => {
+                const a = { id: String(Date.now()), name: newRoomForm.name || `Ambiente ${placedRooms.length + 1}`, width: Number(newRoomForm.width), length: Number(newRoomForm.length), height: 2.7, isClosed: true, countsAsAlvenaria: true, hasForro: true } as any;
+                setAmbientes((s) => [...s, a]);
+                setPlacedRooms((s) => [...s, { ...a, x: 1 + s.length * (a.width + 0.5), y: 1 + s.length * (a.length + 0.5) }]);
+                setShowNewRoomForm(false);
+                setMinimizedNewRoom(false);
+                setNewRoomForm({ name: '', width: 4, length: 3 });
+                savePlanta(undefined, { notify: true }).catch(() => {});
+              }}>Criar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {minimizedNewRoom && (
+        <div className="fixed left-4 top-24 z-50">
+          <button className="bg-blue-600 text-white px-3 py-2 rounded-l" onClick={() => { setShowNewRoomForm(true); setMinimizedNewRoom(false); }}>Novo ambiente</button>
+        </div>
+      )}
       {showSavedModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded shadow-lg p-4 w-[90%] max-w-2xl relative">
@@ -1177,10 +1583,13 @@ export default function PlantaPage() {
                       await savePlanta({ ambientes: placedRooms, paredes: placedWalls });
                       await fetchSavedPlantas();
                       setOpenStatus('Save diagnóstico executado');
-                      alert('Save diagnóstico executado — ver console para payload e resposta.');
+                      setSaveToast('Save diagnóstico executado — ver console para payload e resposta.');
+                      setTimeout(() => setSaveToast(null), 2200);
                     } catch (e:any) {
                       console.error('Forçar save diagnóstico falhou', e);
-                      alert('Falha no save diagnóstico: ' + (e?.message||e));
+                      setSaveStatus('error');
+                      setSaveToast('Falha no save diagnóstico: ' + (e?.message||e));
+                      setTimeout(() => setSaveToast(null), 3500);
                     }
                   }} className="px-3 py-1 bg-yellow-500 text-white rounded">Forçar salvar diagnóstico</button>
                 </div>

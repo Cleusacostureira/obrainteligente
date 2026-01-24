@@ -10,11 +10,11 @@ try {
     (globalThis as any).wallTotalLen = 0;
     try {
       (0, eval)('wallTotalLen = globalThis.wallTotalLen');
-    } catch (e) {
-      // eval may be restricted in some CSP environments — ignore safely
-    }
+      } catch {
+        // eval may be restricted in some CSP environments — ignore safely
+      }
   }
-} catch (e) {
+} catch {
   // ignore
 }
 
@@ -78,7 +78,6 @@ export function calculatePlantaMetrics(planta: Planta, coefs?: Partial<CalcCoefs
   let areaPisoTotal = 0;
   let areaPisoAlvenaria = 0;
   let areaForro = 0;
-  let perimetroExternal = 0;
   const warnings: string[] = [];
 
   for (const a of planta.ambientes || []) {
@@ -86,8 +85,8 @@ export function calculatePlantaMetrics(planta: Planta, coefs?: Partial<CalcCoefs
     areaPisoTotal += piso;
     if (a.countsAsAlvenaria === undefined ? true : !!a.countsAsAlvenaria) areaPisoAlvenaria += piso;
     if (a.hasForro === undefined ? true : !!a.hasForro) areaForro += piso;
-    const perim = 2 * ((a.width || 0) + (a.length || 0));
-    if (a.isClosed === false) perimetroExternal += perim;
+    // perimeter of this room (not used here; external perimeter computed from walls)
+    // const perim = 2 * ((a.width || 0) + (a.length || 0));
   }
 
   // Build walls: prefer explicit `planta.paredes`, otherwise generate from ambientes

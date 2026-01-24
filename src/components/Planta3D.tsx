@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from 'react';
 
 import type { GalleryItem, PlacedObject } from './ThreeGallery/types';
 
-type Props = { planta: any; width?: number; height?: number; selectedGalleryItem?: GalleryItem | null; onPlaceObject?: (p: PlacedObject) => void };
+type Props = { planta: any; width?: number; height?: number; selectedGalleryItem?: GalleryItem | null; onPlaceObject?: (p: PlacedObject) => void; placedObjects?: PlacedObject[] };
 
 const LazyPlanta3D = lazy(() => import('./Planta3DInner'));
 

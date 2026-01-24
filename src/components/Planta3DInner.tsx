@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { Planta, Wall, Opening, PlantaRoom } from '../lib/planta';
 import type { GalleryItem, PlacedObject } from './ThreeGallery/types';
 
-type Props = { planta: Planta; width?: number; height?: number; selectedGalleryItem?: GalleryItem | null; onPlaceObject?: (p: PlacedObject) => void };
+type Props = { planta: Planta; width?: number; height?: number; selectedGalleryItem?: GalleryItem | null; onPlaceObject?: (p: PlacedObject) => void; placedObjects?: PlacedObject[] };
 
 function WallMesh({ w }: { w: Wall }) {
   const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
@@ -68,7 +68,7 @@ function Floor({ rooms }: { rooms: PlantaRoom[] }) {
   );
 }
 
-export default function Planta3DInner({ planta, width = 800, height = 600, selectedGalleryItem = null, onPlaceObject }: Props) {
+export default function Planta3DInner({ planta, width = 800, height = 600, selectedGalleryItem = null, onPlaceObject, placedObjects = [] }: Props) {
   // sanitize planta input so three.js never receives NaN/undefined
   const { walls, rooms } = useMemo(() => {
     const rawRooms: PlantaRoom[] = Array.isArray(planta?.ambientes) ? planta.ambientes : [];
@@ -157,17 +157,18 @@ export default function Planta3DInner({ planta, width = 800, height = 600, selec
                 {(w.openings || []).map((o) => <OpeningHole key={o.id} w={w} o={o} />)}
               </group>
             ))}
-            {rooms.map((r, i) => (
-              <mesh key={`sofa-${i}`} position={[r.x + 0.5, 0.3, -(r.y + 0.5)]}>
-                <boxGeometry args={[0.8, 0.6, 0.6]} />
-                <meshStandardMaterial color="#9ca3af" />
+            {/* placed objects preview in 3D */}
+            {(placedObjects || []).map((o) => (
+              <mesh key={o.id} position={[ (o.posicao?.x || 0), 0.25, -(o.posicao?.y || 0) ]} castShadow receiveShadow>
+                <boxGeometry args={[ Math.max(0.1, (o.largura || 0.5)), Math.max(0.1, (o.altura || 0.3)), 0.4 ]} />
+                <meshStandardMaterial color={ o.tipo === 'porta' ? '#b91c1c' : (o.tipo === 'janela' ? '#d97706' : '#6ee7b7') } />
               </mesh>
             ))}
+            {/* room placeholders removed to keep 3D view clean; models are loaded via gallery */}
           </group>
         </Suspense>
-        {/* Grid and axes helper to make the scene visible even when empty */}
-        <gridHelper args={[Math.max(bounds.size, 10), Math.max(10, Math.ceil(bounds.size))]} position={[bounds.cx, 0, -bounds.cy]} />
-        <axesHelper args={[Math.min(Math.max(bounds.size / 4, 1), 10)]} position={[bounds.cx, 0, -bounds.cy]} />
+        {/* neutral background and no helpers */}
+        <color attach="background" args={["#ffffff"]} />
         <OrbitControls enablePan enableZoom enableRotate />
         <Stats />
       </Canvas>
