@@ -104,10 +104,10 @@ export default function Login() {
                   const img = e.target as HTMLImageElement;
                   img.style.display = 'none';
                   const fb = img.parentElement?.querySelector('.fallback') as HTMLElement | null;
-                  if (fb) fb.classList.remove('hidden');
+                  if (fb) { fb.classList.remove('hidden'); fb.classList.add('flex'); }
                 }}
               />
-              <div className="fallback hidden w-44 h-44 mx-auto flex items-center justify-center bg-white rounded shadow" aria-hidden>
+              <div className="fallback hidden w-44 h-44 mx-auto items-center justify-center bg-white rounded shadow" aria-hidden>
                 <svg width="72" height="72" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
                   <rect width="100" height="100" rx="12" fill="#f8fafc" stroke="#e5e7eb" />
                   <text x="50" y="58" fontSize="14" textAnchor="middle" fill="#0ea5a4">LOGO</text>

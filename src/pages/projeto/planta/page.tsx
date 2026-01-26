@@ -398,7 +398,7 @@ export default function PlantaPage() {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle'|'saving'|'saved'|'error'>('idle');
   const [saveToast, setSaveToast] = useState<string | null>(null);
-  const [_loadedPlantaId, setLoadedPlantaId] = useState<string | null>(null);
+  const loadedPlantaIdRef = useRef<string | null>(null);
   const [show3D, setShow3D] = useState(false);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<PlantaRoom>>({});
@@ -539,14 +539,14 @@ export default function PlantaPage() {
         const { data: updatedRow, error: updateErr } = await supabase.from('plantas').update(updatePayload).eq('id', existing.id).select().single();
         if (updateErr) throw updateErr;
         console.log('savePlanta update result:', updatedRow);
-        setLoadedPlantaId(existing.id);
+        loadedPlantaIdRef.current = existing.id;
       } else {
         const insertPayload: any = { projeto_id: params.id, title: `Planta ${new Date().toISOString()}`, data: payload };
         if (owner) insertPayload.owner = owner;
         const { data: inserted, error: insertErr } = await supabase.from('plantas').insert([insertPayload]).select().single();
         if (insertErr) throw insertErr;
         console.log('savePlanta insert result:', inserted);
-        setLoadedPlantaId(inserted.id);
+        loadedPlantaIdRef.current = inserted.id;
       }
       setSaveStatus('saved');
       if (opts.notify !== false) {
@@ -585,7 +585,7 @@ export default function PlantaPage() {
       setPlacedRooms(doc.ambientes || []);
       setPlacedWalls(doc.paredes || []);
       setAmbientes((doc.ambientes || []).map((a:any) => ({ id: a.id, name: a.name, width: a.width, length: a.length, height: a.height, isClosed: a.isClosed, countsAsAlvenaria: a.countsAsAlvenaria, hasForro: a.hasForro })));
-      setLoadedPlantaId(data.id);
+      loadedPlantaIdRef.current = data.id;
       setSaveToast('Planta carregada');
       setTimeout(() => setSaveToast(null), 1800);
     } catch (err:any) {
@@ -670,7 +670,7 @@ export default function PlantaPage() {
       console.log('placedRooms set to:', saneAmb);
       console.log('placedWalls set to:', saneParedes);
       setAmbientes(saneAmb.map((a:any) => ({ id: a.id, name: a.name, width: a.width, length: a.length, height: a.height, isClosed: a.isClosed, countsAsAlvenaria: a.countsAsAlvenaria, hasForro: a.hasForro })));
-      setLoadedPlantaId(plantaId);
+      loadedPlantaIdRef.current = plantaId;
       if ((saneAmb.length === 0 && saneParedes.length === 0)) {
         setOpenStatus('Planta aberta, mas está vazia (0 ambientes e 0 paredes)');
         // keep modal open so user can choose another planta
@@ -940,7 +940,6 @@ export default function PlantaPage() {
   }
 
   // keyboard shortcuts for copy/paste
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
@@ -1000,7 +999,7 @@ export default function PlantaPage() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // depend on serialized snapshot to re-register handler when relevant state changes
-  }, [shortcutDepsHash]);
+  }, [shortcutDepsHash, pasteCopiedRoom, saveEditRoom, savePlanta]);
 
   function handleCalcular() {
     const res = calcularMateriaisFromPlanta(planta, precos, coefs as any);
