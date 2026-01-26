@@ -5,8 +5,8 @@
       "type": "door",
       "category": "internal",
       "name": "Porta de Madeira",
-      "preview": "/assets/gallery/doors/door_wood_01.jpg",
-      "model3d": "/assets/gallery/doors/door_wood_01.glb",
+      "preview": "/assets/gallery/doors/porta_de_madeira.jpeg",
+      "model3d": "/assets/gallery/doors/porta_de_madeira.glb",
       "widths": [0.70, 0.80, 0.90],
       "height": 2.10,
       "wallOnly": true
@@ -17,7 +17,7 @@
       "id": "window_slide_pvc_01",
       "type": "window",
       "name": "Janela PVC de Correr",
-      "preview": "/assets/gallery/windows/window_slide_pvc_01.jpg",
+      "preview": "/assets/gallery/windows/window_slide_pvc_01.jpeg",
       "model3d": "/assets/gallery/windows/window_slide_pvc_01.glb",
       "widths": [1.00, 1.20, 1.50],
       "height": 1.20,
@@ -31,8 +31,8 @@
       "type": "furniture",
       "category": "living",
       "name": "Sofá IKEA",
-      "preview": "/assets/gallery/furniture/sofa_ikea_01.jpg",
-      "model3d": "/assets/gallery/furniture/sofa_ikea_01.glb",
+      "preview": "/assets/gallery/furniture/sofa_-_ikea_nockeby.jpeg",
+      "model3d": "/assets/gallery/furniture/sofa_-_ikea_nockeby.glb",
       "floorOnly": true
     },
     {
@@ -40,8 +40,8 @@
       "type": "furniture",
       "category": "dining",
       "name": "Mesa com Cadeiras",
-      "preview": "/assets/gallery/furniture/table_dining_01.jpg",
-      "model3d": "/assets/gallery/furniture/table_dining_01.glb",
+      "preview": "/assets/gallery/furniture/mesa_com_cadeiras.jpeg",
+      "model3d": "/assets/gallery/furniture/mesa_com_cadeiras.glb",
       "floorOnly": true
     }
   ]
