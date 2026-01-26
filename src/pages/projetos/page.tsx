@@ -204,7 +204,7 @@ export default function Projetos() {
             {/* New image buttons: Contrato (placeholder), Planta, Calculadora */}
             <div className="flex flex-col items-center">
               <button
-                onClick={() => alert('Funcionalidade Contrato: em breve')}
+                onClick={() => navigate('/contratos')}
                 className="flex items-center justify-center w-12 h-12 bg-white rounded p-1 shadow hover:brightness-95"
                 title="Contrato"
               >
