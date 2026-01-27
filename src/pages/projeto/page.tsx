@@ -85,6 +85,29 @@ export default function ProjetoDetalhes() {
   const handlePrint = () => {
     const w = window.open('', '_blank');
     if (!w) return alert('Não foi possível abrir a janela de impressão');
+    // Build grouped summary by category -> description
+    const grouped = custos.reduce((acc: any, c: any) => {
+      const cat = (c.categoria || 'Sem categoria')
+      if (!acc[cat]) acc[cat] = { items: {}, total: 0 }
+      const key = (c.descricao || c.produto || 'Item sem descrição')
+      const unit = toNumber(c.valor_unitario ?? c.valorUnitario ?? c.valor_compra ?? c.valorCompra)
+      const qtd = toNumber(c.quantidade ?? c.qtd ?? c.amount ?? 1)
+      const total = toNumber(c.valor_total ?? c.valorTotal ?? (unit * qtd))
+      if (!acc[cat].items[key]) acc[cat].items[key] = { entries: [], subtotal: 0 }
+      acc[cat].items[key].entries.push({ date: formatLocalDate(c.data), qty: qtd, unit, total, raw: c })
+      acc[cat].items[key].subtotal += total
+      acc[cat].total += total
+      return acc
+    }, {})
+
+    const summaryHtml = Object.entries(grouped).map(([cat, info]: any) => {
+      const items = Object.entries((info as any).items).map(([desc, v]: any) => {
+        const lines = (v.entries || []).map((e: any) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #eee"><div style="flex:1">${e.date} — ${desc}</div><div style="width:180px;text-align:right">${e.qty} × R$ ${e.unit.toLocaleString('pt-BR')} = R$ ${e.total.toLocaleString('pt-BR')}</div></div>`).join('')
+        return `<div style="margin-bottom:8px"><div style="font-weight:600;margin-bottom:6px">${desc}</div>${lines}<div style="text-align:right;font-weight:700;margin-top:6px">Subtotal ${desc}: R$ ${(v.subtotal).toLocaleString('pt-BR')}</div></div>`
+      }).join('')
+      return `<div style="margin-bottom:18px"><h4 style="margin:6px 0">${cat}</h4>${items}<div style="text-align:right;font-weight:800;border-top:1px solid #ddd;padding-top:8px">Total ${cat}: R$ ${(info as any).total.toLocaleString('pt-BR')}</div></div>`
+    }).join('\n')
+
     const html = `<!doctype html>
 <html>
 <head>
@@ -156,6 +179,11 @@ export default function ProjetoDetalhes() {
         </tr>`).join('')}
       </tbody>
     </table>
+  </div>
+  
+  <div style="margin-top:28px">
+    <h3>Resumo por Categoria</h3>
+    ${summaryHtml}
   </div>
 </body>
 </html>`;

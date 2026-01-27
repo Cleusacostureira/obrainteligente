@@ -10,6 +10,8 @@ export default function CalculadoraPage() {
   const [area, setArea] = useState<number | ''>('');
   const [padrao, setPadrao] = useState<'Econômico' | 'Médio' | 'Alto'>('Médio');
   const [telhado, setTelhado] = useState<'Cerâmico' | 'Fibrocimento' | 'Isotérmico' | 'Madeira aparente' | 'Nenhum'>('Cerâmico');
+  const [pisoTipo, setPisoTipo] = useState<'Cerâmico' | 'Porcelanato' | 'Nenhum'>('Cerâmico');
+  const [forroTipo, setForroTipo] = useState<'PVC' | 'Gesso' | 'Laje' | 'Nenhum'>('PVC');
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomDraft, setRoomDraft] = useState<Partial<Room>>({ name: '', width: 3, length: 3, height: 2.7 });
@@ -99,6 +101,8 @@ export default function CalculadoraPage() {
       rooms: rooms.length ? rooms : undefined,
       telhadoTipo: telhado,
       telhadoInclinationFactor: 1.2,
+      pisoTipo,
+      forroTipo,
     } as any;
     const result = calcularEstimativa(input, p.prices, coefs as any);
     setRows(result.rows);
@@ -127,6 +131,8 @@ export default function CalculadoraPage() {
       rooms: rooms.length ? rooms : undefined,
       telhadoTipo: telhado,
       telhadoInclinationFactor: 1.2,
+      pisoTipo,
+      forroTipo,
     } as any;
     const result = calcularEstimativa(input, prices, coefs as any);
     setRows(result.rows);
@@ -206,6 +212,25 @@ export default function CalculadoraPage() {
                   <option>Fibrocimento</option>
                   <option>Isotérmico</option>
                   <option>Madeira aparente</option>
+                  <option>Nenhum</option>
+                </select>
+              </div>
+
+              <div className="mb-3">
+                <label className="text-sm">Piso</label>
+                <select value={pisoTipo} onChange={(e) => setPisoTipo(e.target.value as any)} className="w-full mt-1 border rounded p-2">
+                  <option>Cerâmico</option>
+                  <option>Porcelanato</option>
+                  <option>Nenhum</option>
+                </select>
+              </div>
+
+              <div className="mb-3">
+                <label className="text-sm">Forro</label>
+                <select value={forroTipo} onChange={(e) => setForroTipo(e.target.value as any)} className="w-full mt-1 border rounded p-2">
+                  <option>PVC</option>
+                  <option>Gesso</option>
+                  <option>Laje</option>
                   <option>Nenhum</option>
                 </select>
               </div>
@@ -305,6 +330,10 @@ export default function CalculadoraPage() {
               <label className="flex flex-col">
                 Brita (m³ / m² piso)
                 <input type="number" step="0.001" value={coefs.brita_m3_m2_piso} onChange={(e) => setCoefs((c) => ({ ...c, brita_m3_m2_piso: Number(e.target.value) }))} className="mt-1 border rounded p-2" />
+              </label>
+              <label className="flex flex-col">
+                Mão de obra (R$ / m²)
+                <input type="number" step="0.01" value={coefs.tarifa_mao_obra_m2 || 0} onChange={(e) => setCoefs((c) => ({ ...c, tarifa_mao_obra_m2: Number(e.target.value) }))} className="mt-1 border rounded p-2" />
               </label>
             </div>
           </div>

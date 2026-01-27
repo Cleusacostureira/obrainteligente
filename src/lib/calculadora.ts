@@ -13,6 +13,8 @@ export type CalculadoraInput = {
   rooms?: Room[];
   telhadoTipo?: 'Cerâmico' | 'Fibrocimento' | 'Isotérmico' | 'Madeira aparente' | 'Nenhum';
   telhadoInclinationFactor?: number; // multiplier for roof area
+  pisoTipo?: 'Cerâmico' | 'Porcelanato' | 'Nenhum';
+  forroTipo?: 'PVC' | 'Gesso' | 'Laje' | 'Nenhum';
 };
 
 export type MaterialRow = {
@@ -40,6 +42,8 @@ export type Coefs = {
   reboco_lados_internal?: number; // default 2
   reboco_lados_external?: number; // default 1
   fator_inclinacao?: number; // roof inclination multiplier (default 1.2)
+  tarifa_mao_obra_m2?: number; // R$ per m2 for labor (optional)
+  ferro_kg_m2?: number; // kg of steel per m2 for laje
 };
 
 const DEFAULT_COEFS: Coefs = {
@@ -57,6 +61,8 @@ const DEFAULT_COEFS: Coefs = {
   reboco_lados_internal: 2,
   reboco_lados_external: 1,
   fator_inclinacao: 1.2,
+  tarifa_mao_obra_m2: 0,
+  ferro_kg_m2: 10,
 };
 
 // Default densities for conversions (approximate)
@@ -82,6 +88,10 @@ export function calcularEstimativa(
     rejunte_kg: 10,
     tinta_litro: 60,
     telha_un: 2.5,
+    piso_m2: 25,
+    porcelanato_m2: 55,
+    forro_pvc_m2: 35,
+    forro_gesso_m2: 45,
   };
   const precos = { ...defaultPrecos, ...(precosOverride || {}) };
 
@@ -173,8 +183,36 @@ export function calcularEstimativa(
   const argamassa_sacos = Math.ceil(totalPisoAll / 4);
   rows.push({ categoria: 'Acabamento', material: 'Argamassa - piso (sac)', quantidade: argamassa_sacos, unidade: 'sac', valor_unitario: precos.argamassa_saco, valor_total: +(argamassa_sacos * precos.argamassa_saco).toFixed(2) });
 
+  // Piso — optionally add finishing floor material cost (cerâmico / porcelanato)
+  if (input.pisoTipo && input.pisoTipo !== 'Nenhum') {
+    if (input.pisoTipo === 'Cerâmico') {
+      const preco = precos.piso_m2 || 0;
+      rows.push({ categoria: 'Acabamento', material: 'Piso cerâmico (m²)', quantidade: +totalPisoAll.toFixed(2) as any, unidade: 'm²', valor_unitario: preco, valor_total: +(totalPisoAll * preco).toFixed(2) });
+    } else if (input.pisoTipo === 'Porcelanato') {
+      const preco = precos.porcelanato_m2 || precos.piso_m2 || 0;
+      rows.push({ categoria: 'Acabamento', material: 'Porcelanato (m²)', quantidade: +totalPisoAll.toFixed(2) as any, unidade: 'm²', valor_unitario: preco, valor_total: +(totalPisoAll * preco).toFixed(2) });
+    }
+  }
+
   // Forro — use only rooms explicitly flagged with hasForro
   rows.push({ categoria: 'Forro', material: 'Área de forro (m²)', quantidade: +areaForro.toFixed(2) as any, unidade: 'm²' });
+  if (input.forroTipo && input.forroTipo !== 'Nenhum') {
+    if (input.forroTipo === 'PVC') {
+      const preco = precos.forro_pvc_m2 || 0;
+      rows.push({ categoria: 'Forro', material: 'Forro PVC (m²)', quantidade: +areaForro.toFixed(2) as any, unidade: 'm²', valor_unitario: preco, valor_total: +(areaForro * preco).toFixed(2) });
+    } else if (input.forroTipo === 'Gesso') {
+      const preco = precos.forro_gesso_m2 || 0;
+      rows.push({ categoria: 'Forro', material: 'Forro gesso (m²)', quantidade: +areaForro.toFixed(2) as any, unidade: 'm²', valor_unitario: preco, valor_total: +(areaForro * preco).toFixed(2) });
+    } else if (input.forroTipo === 'Laje') {
+      // Estimate materials for laje per m2
+      const sacos_cimento_laje = Math.ceil(areaForro * coefs.cimento_estrutura_sac_m2);
+      const brita_laje_m3 = +(areaForro * coefs.brita_m3_m2_piso).toFixed(3);
+      const ferro_kg = Math.ceil(areaForro * (coefs.ferro_kg_m2 || 10));
+      rows.push({ categoria: 'Forro', material: 'Cimento - laje (sac)', quantidade: sacos_cimento_laje, unidade: 'sac', valor_unitario: precos.cimento, valor_total: +(sacos_cimento_laje * precos.cimento).toFixed(2) });
+      rows.push({ categoria: 'Forro', material: 'Brita - laje (m³)', quantidade: brita_laje_m3, unidade: 'm³', valor_unitario: precos.brita_m3, valor_total: +(brita_laje_m3 * precos.brita_m3).toFixed(2) });
+      rows.push({ categoria: 'Forro', material: 'Aço - armadura (kg)', quantidade: ferro_kg, unidade: 'kg' });
+    }
+  }
 
   // Telhado
   if (input.telhadoTipo && input.telhadoTipo !== 'Nenhum') {
@@ -197,9 +235,18 @@ export function calcularEstimativa(
 
   const custo_total = rows.reduce((s, r) => s + (r.valor_total || 0), 0);
 
+  // Mão de obra por m2 (se fornecida nos coeficientes)
+  const tarifaMao = coefs.tarifa_mao_obra_m2 || 0;
+  if (tarifaMao > 0) {
+    const valorMao = +(totalPisoAll * tarifaMao).toFixed(2);
+    rows.push({ categoria: 'Mão de obra', material: 'Mão de obra (R$/m²)', quantidade: +totalPisoAll.toFixed(2) as any, unidade: 'm²', valor_unitario: tarifaMao, valor_total: valorMao });
+  }
+
+  const custo_total_final = rows.reduce((s, r) => s + (r.valor_total || 0), 0);
+
   return {
     rows,
-    resumo: { piso_m2: +totalPisoAll.toFixed(2), paredes_m2: +areaParede.toFixed(2), perimetro_m: +totalPerimeterAll.toFixed(2), area_telhado_m2: +areaTelhado.toFixed(2), custo_total: +custo_total.toFixed(2) },
+    resumo: { piso_m2: +totalPisoAll.toFixed(2), paredes_m2: +areaParede.toFixed(2), perimetro_m: +totalPerimeterAll.toFixed(2), area_telhado_m2: +areaTelhado.toFixed(2), custo_total: +custo_total_final.toFixed(2) },
   };
 }
 
