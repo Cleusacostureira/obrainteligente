@@ -58,7 +58,31 @@ export default function Projetos() {
         .eq('owner', u.id)
         .order('created_at', { ascending: false });
       if (error) console.error(error);
-      setProjetos((data || []).map(normalizeProjeto));
+      const projetosNormalized = (data || []).map(normalizeProjeto);
+
+      // fetch custos for these projetos and aggregate gasto por projeto
+      if (projetosNormalized.length > 0) {
+        try {
+          const ids = projetosNormalized.map((p: any) => p.id);
+          const { data: custosData, error: custosErr } = await supabase
+            .from('custos')
+            .select('projeto_id, valor_total')
+            .in('projeto_id', ids as any[]);
+          if (custosErr) throw custosErr;
+          const sums: Record<string, number> = {};
+          (custosData || []).forEach((c: any) => {
+            const pid = c.projeto_id;
+            const val = Number(c.valor_total ?? c.valorTotal ?? 0);
+            sums[pid] = (sums[pid] || 0) + (isNaN(val) ? 0 : val);
+          });
+          setProjetos(projetosNormalized.map((p: any) => ({ ...p, gastoTotal: sums[p.id] ?? p.gastoTotal ?? 0 })));
+        } catch (e) {
+          console.error('Erro ao agregar custos por projeto', e);
+          setProjetos(projetosNormalized);
+        }
+      } else {
+        setProjetos(projetosNormalized);
+      }
       setLoading(false);
     };
     load();
@@ -77,9 +101,7 @@ export default function Projetos() {
       data_inicio: novoProjeto.dataInicio || null,
       data_termino: novoProjeto.dataTermino || null,
       observacoes: novoProjeto.observacoes,
-      owner: userId,
-      gasto_total: 0,
-      status: 'em-andamento'
+      owner: userId
     };
 
     // Only include `valor_compra` when user provided a value — avoids PostgREST errors
@@ -134,7 +156,7 @@ export default function Projetos() {
         observacoes: ''
       });
     } else {
-      const { data, error } = await supabase.from('projetos').insert([projeto]).select();
+      const { data, error } = await supabase.from('projetos').insert([{ ...projeto, gasto_total: 0, status: 'em-andamento' }]).select();
       if (error) {
         console.error(error);
         alert('Erro ao criar projeto');
